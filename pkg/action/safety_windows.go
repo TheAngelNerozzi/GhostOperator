@@ -3,10 +3,7 @@ package action
 import (
 	"fmt"
 	"math"
-	"syscall"
 	"unsafe"
-
-	"golang.org/x/sys/windows"
 )
 
 var (

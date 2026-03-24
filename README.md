@@ -21,15 +21,22 @@
 
 Get up and running in seconds. No Python, no C++, no cloud keys.
 
-### Windows (PowerShell)
-```powershell
-irm https://cdn.jsdelivr.net/gh/TheAngelNerozzi/GhostOperator@main/scripts/install.ps1 | iex
-```
+<p align="center">
+  <a href="https://github.com/TheAngelNerozzi/GhostOperator/releases/latest/download/ghost.exe">
+    <img src="https://img.shields.io/badge/Download_for_Windows-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Download Windows" />
+  </a>
+  <a href="https://github.com/TheAngelNerozzi/GhostOperator/releases/latest/download/ghost-darwin-arm64">
+    <img src="https://img.shields.io/badge/Download_for_macOS-000000?style=for-the-badge&logo=apple&logoColor=white" alt="Download macOS" />
+  </a>
+  <a href="https://github.com/TheAngelNerozzi/GhostOperator/releases/latest/download/ghost-linux-amd64">
+    <img src="https://img.shields.io/badge/Download_for_Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="Download Linux" />
+  </a>
+</p>
 
-### macOS / Linux (Bash)
-```bash
-curl -sSL https://cdn.jsdelivr.net/gh/TheAngelNerozzi/GhostOperator@main/scripts/install.sh | sh
-```
+### One-Line Install
+**Windows (PS):** `irm https://cdn.jsdelivr.net/gh/TheAngelNerozzi/GhostOperator@main/scripts/install.ps1 | iex`
+
+**Unix (Bash):** `curl -sSL https://cdn.jsdelivr.net/gh/TheAngelNerozzi/GhostOperator@main/scripts/install.sh | sh`
 
 ### Verify Installation
 ```bash

@@ -2,31 +2,56 @@ package input
 
 import (
 	"fmt"
-	"time"
-
-	"github.com/robotn/hotkey"
+	"syscall"
+	"unsafe"
 )
 
-// ListenForHotkey starts a listener for Alt+Space and calls the callback when triggered.
-func ListenForHotkey(callback func()) {
-	// Note: robotn/hotkey is cross-platform.
-	hk := hotkey.New([]hotkey.Modifier{hotkey.ModAlt}, hotkey.KeySpace)
-	
-	err := hk.Register()
-	if err != nil {
-		fmt.Printf("Failed to register hotkey: %v\n", err)
-		return
-	}
+var (
+	modUser32        = syscall.NewLazyDLL("user32.dll")
+	procRegisterHotKey = modUser32.NewProc("RegisterHotKey")
+	procGetMessage     = modUser32.NewProc("GetMessageW")
+)
 
-	fmt.Println("Hotkey registered: Alt+Space")
-	
-	// Start listening in a loop
+const (
+	modAlt = 0x0001
+	// modControl = 0x0002
+	// modShift = 0x0004
+	// modWin = 0x0008
+)
+
+type msg struct {
+	HWND    uintptr
+	Message uint32
+	WParam  uintptr
+	LParam  uintptr
+	Time    uint32
+	Pt      struct {
+		X, Y int32
+	}
+}
+
+// ListenForHotkey starts a listener for Alt+Space (Windows Syscall version).
+func ListenForHotkey(callback func()) {
 	go func() {
+		// Register Alt+Space (ID 1)
+		// Virtual Key for Space is 0x20
+		ret, _, _ := procRegisterHotKey.Call(0, 1, modAlt, 0x20)
+		if ret == 0 {
+			fmt.Println("Failed to register hotkey Alt+Space")
+			return
+		}
+
+		fmt.Println("Hotkey registered: Alt+Space (via Syscall)")
+
+		var m msg
 		for {
-			<-hk.Listen()
-			callback()
-			// Debounce
-			time.Sleep(500 * time.Millisecond)
+			ret, _, _ := procGetMessage.Call(uintptr(unsafe.Pointer(&m)), 0, 0, 0)
+			if ret <= 0 {
+				break
+			}
+			if m.Message == 0x0312 { // WM_HOTKEY
+				callback()
+			}
 		}
 	}()
 }

@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"image"
 	"os"
 	"os/signal"
 	"syscall"
@@ -18,19 +17,37 @@ import (
 var executor = &action.ActionExecutor{}
 
 var rootCmd = &cobra.Command{
-	Use:   "ghost",
-	Short: "GhostOperator (GO) - Open Source Visual Automation Agent",
+	Use:     "ghost",
+	Version: "0.1.0",
+	Short:   "GhostOperator (GO) - Open Source Visual Automation Agent",
+	Long: `
+  ________  ___  ___  ________  ________  _________   
+ |\   ____\|\  \|\  \|\   __  \|\   ____\|\___  ___\ 
+ \ \  \___|\ \  \\\  \ \  \|\  \ \  \___|\|___ \  \_| 
+  \ \  \  __\ \   __  \ \  \\\  \ \_____  \   \ \  \  
+   \ \  \|\  \ \  \ \  \ \  \\\  \|____|\  \   \ \  \ 
+    \ \_______\ \__\ \__\ \_______\____\_\  \   \ \__\
+     \|_______|\|__|\|__|\|_______|\|_________|   \|__|
+                                   \|_________|        
+                                                       
+GhostOperator is a high-performance, local-first visual automation agent.
+Powered by Grid Vision System™ for sub-pixel AI precision.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("👻 GhostOperator is starting...")
-		
+		cmd.Help()
+	},
+}
+
+var startCmd = &cobra.Command{
+	Use:   "start",
+	Short: "Activate the GhostOperator agent",
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Println("👻 GhostOperator activado. Presiona Alt + Espacio para capturar...")
+
 		status := brain.CheckHealth()
 		fmt.Printf("Health Check: %s | GPU: %v\n", status.GPUType, status.GPUAvailable)
 
-		// 1. Watch for Hotkey
 		input.ListenForHotkey(func() {
 			fmt.Println("🚀 Hotkey Triggered! Capturing Screen with Grid...")
-			
-			// 2. Capture Primary Screen
 			bounds := screenshot.GetDisplayBounds(0)
 			rawImg, err := screenshot.CaptureRect(bounds)
 			if err != nil {
@@ -38,7 +55,6 @@ var rootCmd = &cobra.Command{
 				return
 			}
 
-			// 3. Apply Grid Vision System (10x10)
 			config := screen.GridConfig{Rows: 10, Cols: 10}
 			gridJPG, err := screen.DrawGrid(rawImg, config)
 			if err != nil {
@@ -48,15 +64,16 @@ var rootCmd = &cobra.Command{
 
 			fmt.Printf("Grid Overlay Generated (%d bytes). Ready for LMM.\n", len(gridJPG))
 
-			// 4. Mock AI Response (User sees 'Chrome' at B2)
 			targetLabel := "B2"
 			pixelX, pixelY, _ := screen.MapLabelToPixel(targetLabel, bounds, config)
 			fmt.Printf("LMM Selected Grid Cell: %s -> Target Pixels: (%d, %d)\n", targetLabel, pixelX, pixelY)
 
-			// 5. Execute Action via Protocol
 			mockCmd := action.Command{
 				Type: "CLICK",
-				Params: map[string]interface{}{"x": float64(pixelX*1000/bounds.Dx()), "y": float64(pixelY*1000/bounds.Dy())},
+				Params: map[string]interface{}{
+					"x": float64(pixelX * 1000 / bounds.Dx()),
+					"y": float64(pixelY * 1000 / bounds.Dy()),
+				},
 			}
 			executor.Execute(mockCmd)
 		})
@@ -66,6 +83,28 @@ var rootCmd = &cobra.Command{
 		signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 		<-sigs
 	},
+}
+
+func init() {
+	rootCmd.AddCommand(startCmd)
+	cobra.AddTemplateFunc("styleHeading", func(s string) string {
+		return fmt.Sprintf("\033[1;36m%s\033[0m", s)
+	})
+
+	rootCmd.SetHelpTemplate(`{{with (or .Long .Short)}}{{. | trimTrailingWhitespaces}}
+
+{{end}}{{styleHeading "USAGE:"}}
+  {{.UseLine}}
+
+{{styleHeading "COMMANDS:"}}{{range .Commands}}{{if (or .IsAvailableCommand (eq .Name "help"))}}
+  {{rpad .Name .NamePadding}} {{.Short}}{{end}}{{end}}
+
+{{styleHeading "FLAGS:"}}
+{{.LocalFlags.FlagUsages | trimTrailingWhitespaces}}
+
+{{styleHeading "LEARN MORE:"}}
+  Visit https://github.com/TheAngelNerozzi/GhostOperator
+`)
 }
 
 func main() {

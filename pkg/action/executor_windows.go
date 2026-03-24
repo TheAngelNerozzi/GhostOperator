@@ -2,7 +2,6 @@ package action
 
 import (
 	"fmt"
-	"syscall"
 	"unsafe"
 
 	"github.com/kbinani/screenshot"
