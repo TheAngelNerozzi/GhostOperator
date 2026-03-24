@@ -7,7 +7,6 @@ import (
 	"image/color"
 	"image/draw"
 	"image/jpeg"
-	"math"
 
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/basicfont"
