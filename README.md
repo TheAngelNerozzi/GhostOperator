@@ -11,24 +11,29 @@
 <p align="center">
   <img src="https://img.shields.io/github/actions/workflow/status/TheAngelNerozzi/ghostoperator/release.yml?style=for-the-badge" alt="Build Status" />
   <img src="https://img.shields.io/github/license/TheAngelNerozzi/ghostoperator?style=for-the-badge" alt="License" />
-  <img src="https://img.shields.io/github/downloads/TheAngelNerozzi/ghostoperator/total?style=for-the-badge" alt="Downloads" />
+  <img src="https://img.shields.io/jsdelivr/gh/TheAngelNerozzi/GhostOperator?style=for-the-badge&logo=jsdelivr&color=orange" alt="jsDelivr" />
   <a href="https://discord.gg/ghostoperator"><img src="https://img.shields.io/discord/1234567890?style=for-the-badge&label=Discord&logo=discord&logoColor=white" alt="Discord" /></a>
 </p>
 
 ---
 
-## ⚡️ Zero-Friction Installation
+## ⚡️ Quick Start (Universal Install)
 
 Get up and running in seconds. No Python, no C++, no cloud keys.
 
 ### Windows (PowerShell)
 ```powershell
-irm https://get.ghostoperator.ai | iex
+irm https://cdn.jsdelivr.net/gh/TheAngelNerozzi/GhostOperator@main/scripts/install.ps1 | iex
 ```
 
 ### macOS / Linux (Bash)
 ```bash
-curl -sSL https://get.ghostoperator.ai | sh
+curl -sSL https://cdn.jsdelivr.net/gh/TheAngelNerozzi/GhostOperator@main/scripts/install.sh | sh
+```
+
+### Verify Installation
+```bash
+ghost --version
 ```
 
 ---
