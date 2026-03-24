@@ -1,0 +1,38 @@
+<svg width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-10px); }
+    }
+    @keyframes glow {
+      0%, 100% { filter: drop-shadow(0 0 5px #00F0FF); }
+      50% { filter: drop-shadow(0 0 15px #00F0FF); }
+    }
+    @keyframes eye-blink {
+      0%, 90%, 100% { transform: scaleY(1); }
+      95% { transform: scaleY(0.1); }
+    }
+    .ghost { animation: float 3s ease-in-out infinite; }
+    .eyes { animation: eye-blink 5s infinite; transform-origin: center; }
+    .glow-effect { animation: glow 2s ease-in-out infinite; }
+  </style>
+  
+  <!-- Outer Ring (Tech-Noir vibe) -->
+  <circle cx="100" cy="100" r="90" stroke="#1A1A1A" stroke-width="2" />
+  <circle cx="100" cy="100" r="85" stroke="#00F0FF" stroke-width="1" stroke-dasharray="10 5" opacity="0.3" class="glow-effect"/>
+
+  <g class="ghost">
+    <!-- Ghost Body -->
+    <path d="M60 100C60 77.9086 77.9086 60 100 60C122.091 60 140 77.9086 140 100V150L130 140L120 150L110 140L100 150L90 140L80 150L70 140L60 150V100Z" fill="#0D0D0D" stroke="#00F0FF" stroke-width="3" class="glow-effect"/>
+    
+    <!-- Eyes -->
+    <g class="eyes">
+      <circle cx="85" cy="95" r="5" fill="#00F0FF" />
+      <circle cx="115" cy="95" r="5" fill="#00F0FF" />
+    </g>
+    
+    <!-- Subtle Hands -->
+    <path d="M50 110C45 110 40 115 40 120" stroke="#00F0FF" stroke-width="2" opacity="0.5" />
+    <path d="M150 110C155 110 160 115 160 120" stroke="#00F0FF" stroke-width="2" opacity="0.5" />
+  </g>
+</svg>
