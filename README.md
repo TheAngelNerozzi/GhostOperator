@@ -82,6 +82,6 @@ We are building the future of open-source automation. Whether it's adding a new 
 ---
 
 <p align="center">
-  Built with ❤️ by the GhostOperator Team.<br/>
+  Built with ❤️ by Angel Nerozzi & The GhostOperator Team.<br/>
   <i>Empowering humans with invisible automation.</i>
 </p>
