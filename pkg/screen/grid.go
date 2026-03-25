@@ -6,7 +6,8 @@ import (
 	"image"
 	"image/color"
 	"image/draw"
-	"image/jpeg"
+	"image/png"
+	"os"
 
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/basicfont"
@@ -56,13 +57,18 @@ func DrawGrid(img image.Image, config GridConfig) ([]byte, error) {
 		}
 	}
 
-	// 4. Encode as Optimized JPEG
+	// 4. Encode as High-Fidelity PNG
 	var buf bytes.Buffer
-	if err := jpeg.Encode(&buf, canvas, &jpeg.Options{Quality: 75}); err != nil {
+	if err := png.Encode(&buf, canvas); err != nil {
 		return nil, err
 	}
 
 	return buf.Bytes(), nil
+}
+
+// SaveDebugFrame saves the provided PNG buffer to the project root for UAT.
+func SaveDebugFrame(data []byte) error {
+	return os.WriteFile("debug_capture.png", data, 0644)
 }
 
 // MapLabelToPixel converts "B5" to center (X, Y)
