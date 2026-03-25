@@ -13,7 +13,13 @@ var (
 	procGetForegroundWindow = user32.NewProc("GetForegroundWindow")
 	procGetWindowTextW      = user32.NewProc("GetWindowTextW")
 	procGetWindowThreadProcessId = user32.NewProc("GetWindowThreadProcessId")
+	procSetProcessDPIAware        = user32.NewProc("SetProcessDPIAware")
 )
+
+// SetDPIAware enables DPI awareness for the current process.
+func SetDPIAware() {
+	procSetProcessDPIAware.Call()
+}
 
 // WindowInfo contains information about an active window.
 type WindowInfo struct {

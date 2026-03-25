@@ -8,6 +8,7 @@ import (
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -47,7 +48,12 @@ func ShowDashboard(version string, onStart func(density string)) {
 			statusLabel.SetText("🟢 Online")
 			statusCircle.Refresh()
 			fmt.Println("Agente Activado con rejilla:", state.GridDensity)
-			onStart(state.GridDensity)
+			onStart(state.GridDensity, func(err error) {
+				statusCircle.FillColor = color.RGBA{255, 165, 0, 255} // Orange for warning
+				statusLabel.SetText("⚠️ Hotkey Busy")
+				statusCircle.Refresh()
+				dialog.ShowError(err, myWindow)
+			})
 		} else {
 			statusCircle.FillColor = color.RGBA{255, 0, 0, 255}
 			statusLabel.SetText("🔴 Offline")

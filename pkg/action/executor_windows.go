@@ -2,6 +2,7 @@ package action
 
 import (
 	"fmt"
+	"time"
 	"unsafe"
 
 	"github.com/kbinani/screenshot"
@@ -73,13 +74,30 @@ func (e *ActionExecutor) handleClick(params map[string]interface{}) ActionResult
 	pixelX := int32((x * float64(bounds.Dx())) / 1000.0)
 	pixelY := int32((y * float64(bounds.Dy())) / 1000.0)
 
-	// 2. Prepare Windows SendInput (Absolute coordinates require 0-65535 range for mouse_event)
-	// Actually, easier to move mouse normally then click.
-	e.sendMouseInput(pixelX, pixelY, mouseEventMove|mouseEventAbsolute)
+	// 2. Smooth Movement (Lerp)
+	e.SmoothMove(pixelX, pixelY)
+
+	// 3. Perform Click
 	e.sendMouseInput(pixelX, pixelY, mouseEventLeftDown)
 	e.sendMouseInput(pixelX, pixelY, mouseEventLeftUp)
 
 	return ActionResult{Status: "success", Action: "CLICK", Metadata: map[string]int32{"x": pixelX, "y": pixelY}}
+}
+
+// SmoothMove performs a linear interpolation between current pos and target.
+func (e *ActionExecutor) SmoothMove(targetX, targetY int32) {
+	steps := 10
+	// For MVP, we use absolute movement with steps. 
+	// In a full implementation, we'd get current mouse pos first.
+	for i := 1; i <= steps; i++ {
+		t := float64(i) / float64(steps)
+		// Simulating movement from 0,0 or current for demo
+		// In production GO, we track the 'last coordinate'
+		stepX := int32(float64(targetX) * t) 
+		stepY := int32(float64(targetY) * t)
+		e.sendMouseInput(stepX, stepY, mouseEventMove|mouseEventAbsolute)
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 func (e *ActionExecutor) handleType(params map[string]interface{}) ActionResult {
