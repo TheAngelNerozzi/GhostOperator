@@ -1,4 +1,4 @@
-package action
+package automation
 
 import (
 	"encoding/json"
@@ -36,10 +36,12 @@ func (e *ActionExecutor) ParseCommand(jsonData string) (Command, error) {
 // Execute handles command routing
 func (e *ActionExecutor) Execute(cmd Command) ActionResult {
 	fmt.Printf("Executing Action: %s with params %v\n", cmd.Type, cmd.Params)
-	
+
 	switch cmd.Type {
 	case "CLICK":
 		return e.handleClick(cmd.Params)
+	case "DOUBLE_CLICK":
+		return e.handleDoubleClick(cmd.Params)
 	case "TYPE":
 		return e.handleType(cmd.Params)
 	case "WAIT":

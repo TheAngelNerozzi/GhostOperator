@@ -1,4 +1,4 @@
-package screen
+package vision
 
 import (
 	"bytes"
@@ -6,7 +6,7 @@ import (
 	"image"
 	"image/color"
 	"image/draw"
-	"image/png"
+	"image/jpeg"
 	"os"
 
 	"golang.org/x/image/font"
@@ -57,9 +57,9 @@ func DrawGrid(img image.Image, config GridConfig) ([]byte, error) {
 		}
 	}
 
-	// 4. Encode as High-Fidelity PNG
+	// 4. Encode as compressed JPEG for radically faster LLM speed
 	var buf bytes.Buffer
-	if err := png.Encode(&buf, canvas); err != nil {
+	if err := jpeg.Encode(&buf, canvas, &jpeg.Options{Quality: 60}); err != nil {
 		return nil, err
 	}
 
@@ -83,6 +83,11 @@ func MapLabelToPixel(label string, bounds image.Rectangle, config GridConfig) (i
 
 	col := int(colChar - 'A')
 	rowIdx := row - 1
+
+	// Validate bounds
+	if col < 0 || col >= config.Cols || rowIdx < 0 || rowIdx >= config.Rows {
+		return 0, 0, fmt.Errorf("label %s out of grid bounds (%dx%d)", label, config.Cols, config.Rows)
+	}
 
 	cellWidth := float64(bounds.Dx()) / float64(config.Cols)
 	cellHeight := float64(bounds.Dy()) / float64(config.Rows)

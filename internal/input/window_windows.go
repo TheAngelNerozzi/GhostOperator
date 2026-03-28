@@ -9,11 +9,11 @@ import (
 )
 
 var (
-	user32           = windows.NewLazySystemDLL("user32.dll")
-	procGetForegroundWindow = user32.NewProc("GetForegroundWindow")
-	procGetWindowTextW      = user32.NewProc("GetWindowTextW")
+	user32                       = windows.NewLazySystemDLL("user32.dll")
+	procGetForegroundWindow      = user32.NewProc("GetForegroundWindow")
+	procGetWindowTextW           = user32.NewProc("GetWindowTextW")
 	procGetWindowThreadProcessId = user32.NewProc("GetWindowThreadProcessId")
-	procSetProcessDPIAware        = user32.NewProc("SetProcessDPIAware")
+	procSetProcessDPIAware       = user32.NewProc("SetProcessDPIAware")
 )
 
 // SetDPIAware enables DPI awareness for the current process.

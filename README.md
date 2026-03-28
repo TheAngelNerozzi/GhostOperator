@@ -1,99 +1,123 @@
-<p align="center">
-  <img src="logo.svg" width="200" alt="GhostOperator Logo" />
-</p>
+<div align="center">
 
-<h1 align="center">GhostOperator (GO)</h1>
+# 👻 GhostOperator (GO) v1.0
+**The High-Performance Visual Automation Agent for Desktop Ecosystems**  
+[![License: MIT](https://img.shields.io/badge/License-MIT-purple.svg)](https://opensource.org/licenses/MIT)
+[![Go Report Card](https://goreportcard.com/badge/github.com/TheAngelNerozzi/ghostoperator)](https://goreportcard.com/report/github.com/TheAngelNerozzi/ghostoperator)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](http://makeapullrequest.com)
 
-<p align="center">
-  <strong>The local-first action agent that sees what you see, without APIs.</strong>
-</p>
+[**Website**](https://github.com/TheAngelNerozzi/ghostoperator) • [**Documentation**](#-features) • [**Install**](#-installation--downloads)
 
-<p align="center">
-  <img src="https://img.shields.io/github/actions/workflow/status/TheAngelNerozzi/ghostoperator/release.yml?style=for-the-badge" alt="Build Status" />
-  <img src="https://img.shields.io/github/license/TheAngelNerozzi/ghostoperator?style=for-the-badge" alt="License" />
-  <img src="https://img.shields.io/jsdelivr/gh/TheAngelNerozzi/GhostOperator?style=for-the-badge&logo=jsdelivr&color=orange" alt="jsDelivr" />
-  <a href="https://discord.gg/ghostoperator"><img src="https://img.shields.io/discord/1234567890?style=for-the-badge&label=Discord&logo=discord&logoColor=white" alt="Discord" /></a>
-</p>
+</div>
 
 ---
 
-## ⚡️ Quick Start (Universal Install)
+GhostOperator is a highly optimized, fully open-source autonomous agent designed for seamless integration with local AI models (LLMs). It interacts with your computer physically (Mouse/Keyboard) identically to how a human does. By natively seeing your screen without APIs or network latency, GhostOperator automates workflows securely on your local machine using state-of-the-art vision models.
 
-Get up and running in seconds. No Python, no C++, no cloud keys.
+## 🚀 Features
 
-<p align="center">
-  <a href="https://github.com/TheAngelNerozzi/GhostOperator/releases/latest/download/ghost.exe">
-    <img src="https://img.shields.io/badge/Download_for_Windows-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Download Windows" />
-  </a>
-  <a href="https://github.com/TheAngelNerozzi/GhostOperator/releases/latest/download/ghost-darwin-arm64">
-    <img src="https://img.shields.io/badge/Download_for_macOS-000000?style=for-the-badge&logo=apple&logoColor=white" alt="Download macOS" />
-  </a>
-  <a href="https://github.com/TheAngelNerozzi/GhostOperator/releases/latest/download/ghost-linux-amd64">
-    <img src="https://img.shields.io/badge/Download_for_Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="Download Linux" />
-  </a>
-</p>
+- 🧠 **Ollama Integration**: Reasoning-powered automation parsing using local models like Moondream.
+- ⚡ **PhantomPulse™ Engine**: Ultra-fast image compression and grid resolution adaptation that adjusts dynamically to your hardware.
+- 🐢 **Native Hardware Fallback**: A built-in adaptive mechanism that accurately detects slow or weak core CPUs, increasing operation budgets and decoupling execution limits automatically to prevent crashes.
+- 🎯 **Grid Vision System™**: Alphanumeric coordinate mapping for sub-pixel precision and native smart actions (`DOUBLE_CLICK`, `CLICK`, `TYPE`).
+- 🌗 **Ghost Mode UI**: A gorgeous minimalist monochrome HTTP dashboard featuring light/dark mode toggles and real-time hardware telemetry feedback (127.0.0.1:7474).
+- 🖱️ **Organic "Ghost Glide" Simulation**: Moves the mouse with human-like cubic deceleration, achieving realistic UI interactions that gracefully bypass robotic detectors.
 
-### One-Line Install
-**Windows (PS):** `irm https://cdn.jsdelivr.net/gh/TheAngelNerozzi/GhostOperator@main/scripts/install.ps1 | iex`
+## 🏗 Architecture Focus
 
-**Unix (Bash):** `curl -sSL https://cdn.jsdelivr.net/gh/TheAngelNerozzi/GhostOperator@main/scripts/install.sh | sh`
+Built explicitly without heavy CGO linkages to keep it 100% portable:
+- `/cmd/ghost`: Core executable and CLI orchestration bindings.
+- `/internal/vision`: Vision engine capable of compressing arrays seamlessly and Grid System rendering.
+- `/internal/automation`: Precise mechanical input simulation via OS system calls.
+- `/internal/llm`: The localized Reasoning client routing to Ollama APIs.
+- `/pkg/ui`: HTML/JS Dashboard with local state persistence configurations (`config.json`).
 
-### Verify Installation
+---
+
+## 📥 Installation & Downloads
+
+GhostOperator relies exclusively on [Ollama](https://ollama.com/) to process vision locally. For your privacy, not a single snapshot leaves your network. 
+
+### <img src="https://upload.wikimedia.org/wikipedia/commons/e/e0/Git-logo.svg" height="20" align="absmiddle" /> Quick Setup Wizard
+All platforms can perform a quick installation wizard:
+
 ```bash
-ghost --version
+git clone https://github.com/TheAngelNerozzi/ghostoperator
+cd ghostoperator
 ```
 
+### <img src="https://upload.wikimedia.org/wikipedia/commons/4/48/Markdown-mark.svg" height="20" align="absmiddle" /> Platform Binaries
+*GhostOperator automatically asks to install **Moondream 1.8B** (~940MB, ultra-lightweight and efficient for modern CPUs/integrative GPUs) during initial setup!*
+
+<details open>
+<summary><b>🟦 Windows (Native)</b></summary>
+
+Currently, the primary supported operating system with native `user32.dll` acceleration logic.
+
+```powershell
+# Run the automated PowerShell installer
+.\setup.ps1
+
+# Or build natively from source
+go build -ldflags "-s -w" -o ghost.exe ./cmd/ghost
+.\ghost.exe
+```
+</details>
+
+<details>
+<summary><b>🍎 macOS (Apple Silicon / Intel)</b></summary>
+
+*Note: Automation bindings for MacOS are under active community development. Setup primarily boots the core web UI and engine tests.*
+
+```bash
+# Run the bash installer
+chmod +x setup.sh
+./setup.sh
+
+# Or build from source
+go build -o ghost ./cmd/ghost
+./ghost
+```
+</details>
+
+<details>
+<summary><b>🐧 Linux (X11 / Wayland)</b></summary>
+
+*Note: Requires `xdotool` or specific Wayland compositor permissions to cast ghost movements.*
+
+```bash
+# General Linux Installation
+chmod +x setup.sh
+./setup.sh
+
+# Compiling binaries
+go build -o ghost ./cmd/ghost
+./ghost
+```
+</details>
+
 ---
 
-## 🧠 How it Works
+## 🧪 Testing and CI
 
-GhostOperator acts as a high-speed neural bridge between multimodal AI models and your operating system.
+We value clean code and robust mechanics. GhostOperator is rigorously tested over 80% coverage on internal modules:
 
-```mermaid
-graph LR
-    Screen[Monitor] -->|Capture| P1(pkg/screen)
-    P1 -->|Grid Overlay| LMM{Local Brain}
-    LMM -->|Action JSON| P2(pkg/action)
-    P2 -->|Native Syscall| OS[OS Interface]
-    
-    style LMM fill:#00F0FF,stroke:#333,stroke-width:2px,color:#000
-    style OS fill:#1A1A1A,stroke:#00F0FF,stroke-width:2px,color:#fff
+```bash
+# Run the full test suite
+go test ./... -v -count=1
+
+# Run benchmarks
+go test ./internal/core/... -bench=.
 ```
 
----
+## 🤝 Roadmap (v2.0 Beta Planning)
+- [ ] Integration with multi-step reasoning models via LangChain/Go.
+- [ ] Adding native `libxdo` for Linux and `CGEvent` for MacOS core.
+- [ ] Full memory tracking for cross-app session retention.
 
-## 🚀 Key Features
+<br>
 
-| Feature | Description |
-| :--- | :--- |
-| **🛡️ Privacy-First** | Zero cloud, zero telemetry. Your data never leaves your RAM. Optimized for local LMMs like Ollama. |
-| **🏁 Grid Vision** | Advanced alphanumeric grid (A1, B2...) allows even the smallest AI models (Phi-3, Moondream) to hit targets with 100% precision. |
-| **💨 Native Speed** | Built in pure Go. Sub-100ms latency from screen capture to action execution. No overhead, no interpreters. |
-| **🛑 Safety Built-in** | Hardware-level Kill-Switch. Move your mouse or hit `Esc` to instantly regain manual control. |
-
----
-
-## 🛠 Features for Developers
-
-GhostOperator is designed to be highly extensible. You can build "Skills" that automate complex workflows (e.g., "Check my email and summarize Jira").
-
-- **Modular Architecture**: Core logic in `/pkg`, easily importable.
-- **Action Protocol**: Standardized JSON-RPC schema for easy integration with any LLM.
-- **CGO-Free**: Compile to a single static binary on any platform.
-
----
-
-## 🤝 Contributing
-
-We are building the future of open-source automation. Whether it's adding a new OS syscall, optimizing the Grid system, or creating a new Skill, your contribution is welcome!
-
-1. Star the repo.
-2. Fork GhostOperator.
-3. Check out [CONTRIBUTING.md](CONTRIBUTING.md).
-
----
-
-<p align="center">
-  Built with ❤️ by Angel Nerozzi & The GhostOperator Team.<br/>
-  <i>Empowering humans with invisible automation.</i>
-</p>
+<div align="center">
+  Built by <b>Angel Nerozzi - Open Source</b> 🛸✨👻<br>
+  <i>"No machine can replace the human spark, but it shouldn't have to push the buttons either."</i>
+</div>

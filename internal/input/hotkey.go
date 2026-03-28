@@ -36,11 +36,11 @@ func ListenForHotkey(callback func(), onError func(err error)) {
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
 
-		// Register Alt+Space (ID 1)
-		// Virtual Key for Space is 0x20
-		ret, _, _ := procRegisterHotKey.Call(0, 1, modAlt, 0x20)
+		// Register Alt+G (ID 1)
+		// Virtual Key for 'G' is 0x47
+		ret, _, _ := procRegisterHotKey.Call(0, 1, modAlt, 0x47)
 		if ret == 0 {
-			err := fmt.Errorf("failed to register hotkey Alt+Space (Error: %v)", syscall.GetLastError())
+			err := fmt.Errorf("failed to register hotkey Alt+G (Error: %v)", syscall.GetLastError())
 			fmt.Printf("❌ %v\n", err)
 			if onError != nil {
 				onError(err)
@@ -48,7 +48,7 @@ func ListenForHotkey(callback func(), onError func(err error)) {
 			return
 		}
 
-		fmt.Println("✅ [Windows] Hotkey registered successfully: Alt+Space")
+		fmt.Println("✅ [Windows] Hotkey registered successfully: Alt+G")
 
 		var m msg
 		for {

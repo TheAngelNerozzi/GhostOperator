@@ -1,4 +1,4 @@
-package action
+package automation
 
 import (
 	"fmt"
@@ -7,13 +7,8 @@ import (
 )
 
 var (
-	procGetCursorPos = modUser32.NewProc("GetCursorPos")
 	procGetAsyncKeyState = modUser32.NewProc("GetAsyncKeyState")
 )
-
-type point struct {
-	x, y int32
-}
 
 const (
 	vkEscape = 0x1B
