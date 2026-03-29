@@ -17,17 +17,12 @@ var (
 )
 
 const (
-	inputMouse    = 0
-	inputKeyboard = 1
+	inputMouse = 0
 )
 
 const (
-	mouseEventMove      = 0x0001
-	mouseEventLeftDown  = 0x0002
-	mouseEventLeftUp    = 0x0004
-	mouseEventRightDown = 0x0008
-	mouseEventRightUp   = 0x0010
-	mouseEventAbsolute  = 0x8000
+	mouseEventLeftDown = 0x0002
+	mouseEventLeftUp   = 0x0004
 )
 
 // mouseInput matches the Windows MOUSEINPUT structure
