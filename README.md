@@ -118,15 +118,15 @@ Once the Ghost Dashboard is running on `127.0.0.1:7474`, you simply talk to it. 
 
 ### 1. Opening Desktop Apps (Double-Clicks)
 Currently, a single mouse click on a Windows desktop icon only *selects* it. If you want into launch applications or open files, use the **Abre** (open) verb to instantly trigger the `DOUBLE_CLICK` protocol:
-- ✅ *"Abre la papelera de reciclaje"*
-- ✅ *"Abre el navegador Firefox"*
-- ✅ *"Abre la carpeta de descargas"*
+- ✅ *"Open the recycle bin"*
+- ✅ *"Open the Firefox browser"*
+- ✅ *"Open the downloads folder"*
 
 ### 2. General Web & UI Interaction (Single Clicks)
 For generic OS navigation, browser usage, or dismissing popups, simply phrase it naturally:
-- ✅ *"Haz click en el botón de aceptar"*
-- ✅ *"Busca el navegador y dale click"*
-- ✅ *"Cierra la ventana"*
+- ✅ *"Click the accept button"*
+- ✅ *"Find the browser and click on it"*
+- ✅ *"Close the window"*
 
 ---
 
