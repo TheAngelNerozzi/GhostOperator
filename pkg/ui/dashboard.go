@@ -439,19 +439,68 @@ function toggleTheme() {
 }
 
 function updateThemeBtn() {
-  themeToggle.innerHTML = isLight ? '☀️ Light' : '🌙 Dark';
+  if (typeof dict !== 'undefined' && currentLang) {
+    themeToggle.innerHTML = isLight ? dict[currentLang].themeLight : dict[currentLang].themeDark;
+  } else {
+    themeToggle.innerHTML = isLight ? '☀️ Light' : '🌙 Dark';
+  }
 }
 
-// Translations
-const intros = {
-  'es': 'PhantomPulse™ activo. ¿Qué deseas automatizar a la velocidad de la luz?',
-  'en': 'PhantomPulse™ active. What do you want to automate at the speed of light?'
+// Translations Dictionary (i18n)
+let currentLang = localStorage.getItem('ghost_lang') || 'es';
+
+const dict = {
+  'es': {
+    intro: 'PhantomPulse™ activo. ¿Qué deseas automatizar a la velocidad de la luz?',
+    placeholder: 'Escribe tu misión PhantomPulse™...',
+    send: 'ENVIAR',
+    themeLight: '☀️ Claro',
+    themeDark: '🌙 Oscuro',
+    llmReady: 'OLLAMA LISTO',
+    llmOffline: 'OLLAMA OFFLINE',
+    uiOffline: 'UI OFFLINE',
+    fbOn: '🐢 Fallback activado — budget ',
+    fbOff: '⚡ Fallback desactivado — budget normal',
+    fbTitleActive: 'Desactivar modo fallback',
+    fbTitleInactive: 'Activar modo fallback'
+  },
+  'en': {
+    intro: 'PhantomPulse™ active. What do you want to automate at the speed of light?',
+    placeholder: 'Type your PhantomPulse™ mission...',
+    send: 'SEND',
+    themeLight: '☀️ Light',
+    themeDark: '🌙 Dark',
+    llmReady: 'OLLAMA READY',
+    llmOffline: 'OLLAMA OFFLINE',
+    uiOffline: 'UI OFFLINE',
+    fbOn: '🐢 Fallback enabled — budget ',
+    fbOff: '⚡ Fallback disabled — normal budget',
+    fbTitleActive: 'Disable fallback mode',
+    fbTitleInactive: 'Enable fallback mode'
+  }
 };
 
 function changeLang(val) {
-  ghostIntro.innerHTML = '<div class="prefix">GHOST</div>' + intros[val];
+  currentLang = val;
+  localStorage.setItem('ghost_lang', val);
+  
+  // Update static UI
+  ghostIntro.innerHTML = '<div class="prefix">GHOST</div>' + dict[val].intro;
+  input.placeholder = dict[val].placeholder;
+  btn.textContent = dict[val].send;
+  updateThemeBtn();
+  document.getElementById('lang-select').value = val;
+  
+  // Update dynamic elements
+  if (llmDot.classList.contains('offline')) {
+    llmText.textContent = llmText.textContent.includes('UI') ? dict[val].uiOffline : dict[val].llmOffline;
+  } else {
+    llmText.textContent = dict[val].llmReady;
+  }
 }
-changeLang('es');
+
+// Initialize Language
+changeLang(currentLang);
 
 // Message handling
 function addMsg(text, type) {
@@ -526,14 +575,14 @@ setInterval(() => {
 		.then(data => {
 			if(data.status === 'ok') {
 				llmDot.classList.remove('offline');
-				llmText.textContent = "OLLAMA LISTO";
+				llmText.textContent = dict[currentLang].llmReady;
 			} else {
 				llmDot.classList.add('offline');
-				llmText.textContent = "OLLAMA OFFLINE";
+				llmText.textContent = dict[currentLang].llmOffline;
 			}
 		}).catch(()=> {
 			llmDot.classList.add('offline');
-			llmText.textContent = "UI OFFLINE";
+			llmText.textContent = dict[currentLang].uiOffline;
 		});
 }, 5000);
 
@@ -549,15 +598,15 @@ function refreshFallback() {
       if (data.is_weak || data.fallback_forced) {
         badge.style.display = 'inline-flex';
         text.textContent = 'FALLBACK ' + data.budget_ms + 'ms';
-        badge.title = data.reason || 'Fallback forzado por usuario';
+        badge.title = data.reason || 'Manual';
         toggle.classList.add('active');
         toggle.textContent = '🐢 ON';
-        toggle.title = 'Desactivar modo fallback';
+        toggle.title = dict[currentLang].fbTitleActive;
       } else {
         badge.style.display = 'none';
         toggle.classList.remove('active');
         toggle.textContent = '⚡ OFF';
-        toggle.title = 'Activar modo fallback (5s budget)';
+        toggle.title = dict[currentLang].fbTitleInactive;
       }
     }).catch(() => {});
 }
@@ -569,8 +618,8 @@ function toggleFallback() {
     .then(data => {
       refreshFallback();
       addMsg(data.fallback_active
-        ? '🐢 Fallback activado — budget ' + data.budget_ms + 'ms'
-        : '⚡ Fallback desactivado — budget normal', 'ghost');
+        ? dict[currentLang].fbOn + data.budget_ms + 'ms'
+        : dict[currentLang].fbOff, 'ghost');
     }).catch(() => {});
 }
 </script>
