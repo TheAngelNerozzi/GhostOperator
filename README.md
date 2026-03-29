@@ -34,6 +34,20 @@ Built explicitly without heavy CGO linkages to keep it 100% portable:
 
 ---
 
+## 💻 System Requirements
+
+GhostOperator’s performance is directly bound to your hardware's capability to run Local LLMs (Ollama + Moondream). 
+
+| Component | 🐢 Minimum (Fallback Mode Active) | ⚡ Recommended (Real-Time Fluid) |
+| :--- | :--- | :--- |
+| **OS** | Windows 10/11 (64-bit) | Windows 11 / AWS EC2 (`g4dn.xlarge`) |
+| **CPU** | 2 Cores (e.g., Celeron, old i3) | 8+ Cores (e.g., Core i7, Ryzen 7) |
+| **GPU** | Integrated Intel/AMD Graphics | **Dedicated Nvidia** (RTX 3060+, T4, A100) |
+| **RAM** | 8 GB | 16 GB+ |
+| **Pacing** | ~2 to 20 mins per action *(Be patient!)* | **~1.5 to 2.5 seconds** per action |
+
+---
+
 ## 📥 Installation & Downloads
 
 GhostOperator relies exclusively on [Ollama](https://ollama.com/) to process vision locally. For your privacy, not a single snapshot leaves your network. 
@@ -95,6 +109,24 @@ go build -o ghost ./cmd/ghost
 ./ghost
 ```
 </details>
+
+---
+
+## 📖 User Manual & Prompting Guide
+
+Once the Ghost Dashboard is running on `127.0.0.1:7474`, you simply talk to it. The **Action Modifier Engine** reads your intent to interact accurately with the OS.
+
+### 1. Opening Desktop Apps (Double-Clicks)
+Currently, a single mouse click on a Windows desktop icon only *selects* it. If you want into launch applications or open files, use the **Abre** (open) verb to instantly trigger the `DOUBLE_CLICK` protocol:
+- ✅ *"Abre la papelera de reciclaje"*
+- ✅ *"Abre el navegador Firefox"*
+- ✅ *"Abre la carpeta de descargas"*
+
+### 2. General Web & UI Interaction (Single Clicks)
+For generic OS navigation, browser usage, or dismissing popups, simply phrase it naturally:
+- ✅ *"Haz click en el botón de aceptar"*
+- ✅ *"Busca el navegador y dale click"*
+- ✅ *"Cierra la ventana"*
 
 ---
 
