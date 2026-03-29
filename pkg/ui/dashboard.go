@@ -426,26 +426,6 @@ const log = document.getElementById('log');
 const btn = document.getElementById('btn');
 const input = document.getElementById('intent');
 
-// Theme Management
-let isLight = localStorage.getItem('ghost_theme') === 'light';
-if (isLight) document.body.classList.add('light-theme');
-updateThemeBtn();
-
-function toggleTheme() {
-  isLight = !isLight;
-  document.body.classList.toggle('light-theme', isLight);
-  localStorage.setItem('ghost_theme', isLight ? 'light' : 'dark');
-  updateThemeBtn();
-}
-
-function updateThemeBtn() {
-  if (typeof dict !== 'undefined' && currentLang) {
-    themeToggle.innerHTML = isLight ? dict[currentLang].themeLight : dict[currentLang].themeDark;
-  } else {
-    themeToggle.innerHTML = isLight ? '☀️ Light' : '🌙 Dark';
-  }
-}
-
 // Translations Dictionary (i18n)
 let currentLang = localStorage.getItem('ghost_lang') || 'es';
 
@@ -480,16 +460,32 @@ const dict = {
   }
 };
 
+// Theme Management
+let isLight = localStorage.getItem('ghost_theme') === 'light';
+if (isLight) document.body.classList.add('light-theme');
+updateThemeBtn();
+
+function toggleTheme() {
+  isLight = !isLight;
+  document.body.classList.toggle('light-theme', isLight);
+  localStorage.setItem('ghost_theme', isLight ? 'light' : 'dark');
+  updateThemeBtn();
+}
+
+function updateThemeBtn() {
+  themeToggle.innerHTML = isLight ? dict[currentLang].themeLight : dict[currentLang].themeDark;
+}
+
 function changeLang(val) {
   currentLang = val;
   localStorage.setItem('ghost_lang', val);
   
   // Update static UI
-  ghostIntro.innerHTML = '<div class="prefix">GHOST</div>' + dict[val].intro;
-  input.placeholder = dict[val].placeholder;
-  btn.textContent = dict[val].send;
-  updateThemeBtn();
   document.getElementById('lang-select').value = val;
+  if(ghostIntro) ghostIntro.innerHTML = '<div class="prefix">GHOST</div>' + dict[val].intro;
+  if(input) input.placeholder = dict[val].placeholder;
+  if(btn) btn.textContent = dict[val].send;
+  updateThemeBtn();
   
   // Update dynamic elements
   if (llmDot.classList.contains('offline')) {
