@@ -116,6 +116,10 @@ func (e *ActionExecutor) SmoothMove(targetX, targetY int32) {
 		procSetCursorPos.Call(uintptr(stepX), uintptr(stepY))
 		time.Sleep(12 * time.Millisecond)
 	}
+
+	// Record intended position for safety checks
+	e.LastTargetX = targetX
+	e.LastTargetY = targetY
 }
 
 func (e *ActionExecutor) handleType(params map[string]interface{}) ActionResult {
