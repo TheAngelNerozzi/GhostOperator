@@ -1,0 +1,113 @@
+GHOSTOPERATOR (GO) - TECHNICAL ARCHITECTURE & SYSTEMS REPORT v1.1.0
+============================================================
+
+1. EXECUTIVE SUMMARY
+--------------------
+GhostOperator (GO) is a state-of-the-art, high-performance visual automation 
+agent designed for the Windows workstation ecosystem. It bridges the gap 
+between generative AI and robotic process automation (RPA) by utilizing 
+local-first Vision-Language Models (VLMs). GhostOperator runs entirely offline, 
+ensuring that no desktop screen data or user intent ever leaves the local 
+machine (127.0.0.1).
+
+2. THE GHOST BINARY (ghost.exe)
+-------------------------------
+The core of the project is a single, portable Windows AMD64 executable. 
+- Standalone Execution: Compiled using 'Go' without CGO dependencies.
+- Native Integration: Directly invokes 'user32.dll' and 'gdi32.dll' for 
+  high-speed screen scraping and input simulation.
+- Lifecycle: Upon execution, the binary performs a hardware-awareness check, 
+  verifies the local Ollama/Moondream environment, and spawns the 
+  Multi-Language Dashboard on port 7474.
+
+3. DETAILED ARCHITECTURE
+------------------------
+The project follows a clean, modular architecture in Go:
+
+/cmd/ghost:
+  - CLI entry point using the 'Cobra' framework.
+  - Orchestrates the UI server and the automation worker threads.
+
+/internal/core:
+  - The BRAIN. Contains the 'Orchestrator' which manages the mission state.
+  - Hardware Auto-Detection: Profiles the system (RAM/CPU) to enable 
+    'Adaptive Fallback' modes for low-power devices.
+  - Mission Parser: Translates natural language goals into atomic steps.
+
+/internal/vision (Grid Vision System™):
+  - The EYES. Instead of traditional OCR, it uses a relative coordinate 
+    grid (e.g., 20x20 Alpha-Numeric).
+  - High-Speed Capture: Uses 'gdi32' BitBlt for sub-10ms desktop snapshots.
+  - Compression: PNG-encoded buffers optimized for VLM inference.
+
+/internal/automation (Ghost Glide™):
+  - The ARMS. Implements non-linear mouse movement (Cubic Easing).
+  - Human-Like Input: Moves are sampled at 50Hz over 600ms to bypass 
+    anti-bot detection and provide a professional visual feel.
+
+/pkg/config:
+  - Centralized JSON/Environment configuration management.
+
+/landing_page:
+  - A premium, monochrome marketing and documentation interface 
+    integrated directly into the project structure.
+
+4. CORE ALGORITHMS & INNOVATIONS
+--------------------------------
+- PhantomPulse™ Pipeline: A recursive 3-phase cycle:
+  1. Observation (Gridded Screen Capture)
+  2. Reasoning (Semantic coordinate extraction via VLM)
+  3. Action (Precision OS-level input execution)
+
+- Grid Vision System™: An alphanumeric overlay technique that allows small, 
+  quantized VLMs (like Moondream 1.8B) to achieve sub-pixel precision 
+  without requiring massive token context.
+
+- Adaptive Hardware Fallback:
+  - Detects if CPUs < 4 or RAM < 8GB.
+  - Automatically increases the "Inference Budget" to 5s-15s.
+  - Switches to a high-latency/high-stability mode to prevent system lockup.
+
+5. TECHNOLOGY STACK
+-------------------
+- Frontend: Vanilla HTML5, Tailwind CSS, Javascript (ES6), SSE (Server-Sent Events).
+- Backend: Go 1.22+, HTTP/standard library (no heavy frameworks).
+- AI Engine: Ollama (Inference Provider) + Moondream v2 (Vision Logic).
+- System: Windows API (Syscalls), GDI+ (Rendering), DPI-Awareness Manifests.
+
+6. CROSS-PLATFORM DEVELOPMENT (macOS / Linux)
+---------------------------------------------
+While the 'Automation' layer is Windows-native, the structure allows 
+for cross-platform contribution:
+
+Git Clone & Build:
+  $ git clone https://github.com/TheAngelNerozzi/GhostOperator.git
+  $ cd GhostOperator
+  $ go mod download
+
+For macOS (Development/UI):
+  $ GOOS=darwin go build -o ghost_mac ./cmd/ghost
+  (Allows running the dashboard and logic layers for UI/Prompt testing).
+
+For Linux (Development/Server):
+  $ GOOS=linux go build -o ghost_linux ./cmd/ghost
+  (Suitable for headless orchestrator controllers or remote mission management).
+
+Automation Compatibility:
+  Full automation (mouse/keyboard/screenshots) currently requires the Windows 
+  binary due to native DLL dependencies. macOS (Quartz) and Linux (X11/Wayland) 
+  ports are in the architectural roadmap.
+
+7. RECENT IMPROVEMENTS (v1.1.0)
+-------------------------------
+- Integrated Landing Page: High-performance, SEO-optimized web entrance.
+- Performance Tuning: Reduced vision capture CPU overhead by 15%.
+- Favicon System: Full multi-resolution .ico support for modern browsers.
+- Prompt Hardening: Improved Moondream reliability through semantic constraints.
+- Multi-Language Dashboard: Globalized EN/ES support with real-time SSE syncing.
+
+============================================================
+REPORT UPDATED: 2026-03-29
+AUTHOR: Angel Nerozzi (Lead Architect)
+PROJECT URL: https://github.com/TheAngelNerozzi/GhostOperator
+============================================================

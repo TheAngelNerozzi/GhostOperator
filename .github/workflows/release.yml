@@ -1,55 +1,38 @@
-name: Release GhostOperator v1.0.0
+name: "Build and Release GhostOperator (v1)"
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
-  release:
-    name: Build and Release
+  build-windows:
+    name: Build & Release Windows (AMD64)
     runs-on: windows-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup Go
+      - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: '1.22'
+          cache: true
 
-      - name: Install Dependencies
-        run: go mod tidy
-
-      - name: Install rsrc
-        run: go install github.com/akavel/rsrc@latest
-
-      - name: Build Windows Resource
-        run: rsrc -arch amd64 -ico icon.ico -o resource.syso
-
-      - name: Compile GhostOperator (Windows)
+      - name: Build Binary
         run: |
-          $env:CGO_ENABLED=0
-          go build -ldflags "-H=windowsgui -s -w -X main.version=${{ github.ref_name }}" -o ghost.exe ./cmd/ghost
+          go build -ldflags "-s -w" -o ghost-windows-amd64.exe ./cmd/ghost
 
-      - name: Release to GitHub
-        uses: softprops/action-gh-release@v1
+      - name: Create or Update Release
+        uses: softprops/action-gh-release@v2
         with:
-          files: ghost.exe
-          name: GhostOperator ${{ github.ref_name }}
-          body: |
-            ## GhostOperator (GO) v1.0.0
-            🚀 High-performance visual automation agent.
-            
-            ### Features
-            - 🏁 **Grid Vision System™**: Sub-pixel precision for AI models.
-            - 🎨 **Desktop Dashboard**: Clean Fyne-based UI.
-            - 🛡️ **Privacy-First**: No telemetry, local execution.
-            - 🖱️ **DPI Aware**: Pixel-perfect accuracy on all displays.
-            
-            ### Installation
-            ```powershell
-            irm https://cdn.jsdelivr.net/gh/TheAngelNerozzi/GhostOperator@main/scripts/install.ps1 | iex
-            ```
+          tag_name: "latest"
+          name: "GhostOperator (Latest Stable)"
+          body: "Auto-compiled binary from the latest push. Includes Grid Vision System™ and PhantomPulse™ v1.0.1 improvements."
+          files: ghost-windows-amd64.exe
+          make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
