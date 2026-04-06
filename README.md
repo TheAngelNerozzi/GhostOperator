@@ -6,7 +6,7 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/TheAngelNerozzi/ghostoperator)](https://goreportcard.com/report/github.com/TheAngelNerozzi/ghostoperator)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](http://makeapullrequest.com)
 
-[**Website**](https://github.com/TheAngelNerozzi/ghostoperator) • [**Documentation**](#-features) • [**Install**](#-installation--downloads)
+[**Website**](https://ghostoperator.vercel.app/) • [**Documentation**](#-features) • [**Install**](#-installation--downloads)
 
 </div>
 
