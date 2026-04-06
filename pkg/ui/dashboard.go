@@ -23,7 +23,7 @@ func ShowDashboard(version string, cfg *config.AppConfig, m machine.Machine, onS
 	// Serve the main dashboard page
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprintf(w, dashboardHTML, version, version)
+		fmt.Fprintf(w, dashboardHTML, version, version, version)
 	})
 
 	// Mission execution endpoint (streams Server-Sent Events)

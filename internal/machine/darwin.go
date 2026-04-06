@@ -15,6 +15,11 @@ func NewDarwinMachine() *DarwinMachine {
 	return &DarwinMachine{}
 }
 
+// NewNativeMachine returns the macOS implementation.
+func NewNativeMachine() Machine {
+	return NewDarwinMachine()
+}
+
 func (d *DarwinMachine) Capture() (image.Image, error) {
 	bounds := screenshot.GetDisplayBounds(0)
 	return screenshot.CaptureRect(bounds)

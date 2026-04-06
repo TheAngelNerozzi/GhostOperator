@@ -18,6 +18,11 @@ func NewWindowsMachine() *WindowsMachine {
 	}
 }
 
+// NewNativeMachine returns the Windows implementation.
+func NewNativeMachine() Machine {
+	return NewWindowsMachine()
+}
+
 func (w *WindowsMachine) Capture() (image.Image, error) {
 	bounds := screenshot.GetDisplayBounds(0)
 	return screenshot.CaptureRect(bounds)

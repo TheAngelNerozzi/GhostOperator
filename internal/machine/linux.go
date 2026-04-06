@@ -15,6 +15,11 @@ func NewLinuxMachine() *LinuxMachine {
 	return &LinuxMachine{}
 }
 
+// NewNativeMachine returns the Linux implementation.
+func NewNativeMachine() Machine {
+	return NewLinuxMachine()
+}
+
 func (l *LinuxMachine) Capture() (image.Image, error) {
 	bounds := screenshot.GetDisplayBounds(0)
 	return screenshot.CaptureRect(bounds)

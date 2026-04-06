@@ -1,9 +1,6 @@
 package machine
 
-import (
-	"image"
-	"runtime"
-)
+import "image"
 
 // Machine is the universal interface for interacting with the OS.
 // This allows GhostOperator to be 100% Cross-Platform.
@@ -17,19 +14,4 @@ type Machine interface {
 	// User Intervention Check
 	IsInterrupted() bool
 	ResetIntervention()
-}
-
-// NewNativeMachine returns the appropriate implementation for the current OS.
-func NewNativeMachine() Machine {
-	switch runtime.GOOS {
-	case "windows":
-		return NewWindowsMachine()
-	case "darwin":
-		return NewDarwinMachine()
-	case "linux":
-		return NewLinuxMachine()
-	default:
-		// Fallback or panic if OS is unsupported
-		return NewWindowsMachine() 
-	}
 }
