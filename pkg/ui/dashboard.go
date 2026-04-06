@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"os/exec"
+	"runtime"
 	"time"
 
 	"github.com/TheAngelNerozzi/ghostoperator/internal/core"
@@ -287,7 +288,7 @@ const dashboardHTML = `<!DOCTYPE html>
 
   /* Interruption Modal */
   #modal {
-    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    position: fixed; top: 0; left: 0; width: 100%%; height: 100%%;
     background: rgba(0,0,0,0.9); backdrop-filter: blur(10px);
     display: none; flex-direction: column; align-items: center; justify-content: center;
     z-index: 1000;
