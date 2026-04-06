@@ -20,6 +20,9 @@ The core of the project is a single, portable Windows AMD64 executable.
   verifies the local Ollama/Moondream environment, and spawns the 
   Multi-Language Dashboard on port 7474.
 
+/resources:
+  - Windows-native assets: .ico, .manifest, .rc (Resources).
+
 3. DETAILED ARCHITECTURE
 ------------------------
 The project follows a clean, modular architecture in Go:
@@ -101,6 +104,7 @@ Automation Compatibility:
 7. RECENT IMPROVEMENTS (v1.1.0)
 -------------------------------
 - Integrated Landing Page: High-performance, SEO-optimized web entrance.
+- Project Cleanup: Organized root directory and moved assets to /resources.
 - Performance Tuning: Reduced vision capture CPU overhead by 15%.
 - Favicon System: Full multi-resolution .ico support for modern browsers.
 - Prompt Hardening: Improved Moondream reliability through semantic constraints.

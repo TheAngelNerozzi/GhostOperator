@@ -22,9 +22,11 @@ type ActionResult struct {
 
 // ActionExecutor handles the execution of commands and the safety loop.
 type ActionExecutor struct {
-	IsRunning   bool
-	LastTargetX int32
-	LastTargetY int32
+	IsRunning      bool
+	LastTargetX    int32
+	LastTargetY    int32
+	Interrupted    bool
+	OnInterruption func() // Callback for the UI/CLI
 }
 
 // ParseCommand converts a JSON string into a Command struct.

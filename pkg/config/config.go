@@ -24,7 +24,7 @@ func Load() *AppConfig {
 	defaultCfg := &AppConfig{
 		OllamaEndpoint:      "http://127.0.0.1:11434",
 		OllamaModel:         "moondream",
-		GridDensity:         "10x10",
+		GridDensity:         "20x20",
 		Hotkey:              "Alt+G",
 		PhantomPulseEnabled: true,
 		MaxOperationTimeMs:  2500,

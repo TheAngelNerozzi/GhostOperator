@@ -9,9 +9,21 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+type MockMachine struct {
+	Interrupted bool
+}
+func (m *MockMachine) Capture() (image.Image, error) { return image.NewRGBA(image.Rect(0,0,10,10)), nil }
+func (m *MockMachine) Move(x, y int) error { return nil }
+func (m *MockMachine) Click(x, y int) error { return nil }
+func (m *MockMachine) DoubleClick(x, y int) error { return nil }
+func (m *MockMachine) Type(text string) error { return nil }
+func (m *MockMachine) IsInterrupted() bool { return m.Interrupted }
+func (m *MockMachine) ResetIntervention() { m.Interrupted = false }
+
 func TestPhantomPulse_AdaptiveResize(t *testing.T) {
 	cfg := &config.AppConfig{PhantomPulseEnabled: true}
-	pp := &PhantomPulse{Config: cfg}
+	mm := &MockMachine{}
+	pp := NewPhantomPulse(cfg, nil, mm)
 
 	// Create a large mock image
 	img := image.NewRGBA(image.Rect(0, 0, 1920, 1080))
@@ -28,7 +40,8 @@ func TestPhantomPulse_AdaptiveResize_Fallback(t *testing.T) {
 		PhantomPulseEnabled: true,
 		HardwareFallback:    true,
 	}
-	pp := &PhantomPulse{Config: cfg}
+	mm := &MockMachine{}
+	pp := NewPhantomPulse(cfg, nil, mm)
 
 	img := image.NewRGBA(image.Rect(0, 0, 1920, 1080))
 	resized := pp.adaptiveResize(img)
@@ -41,7 +54,8 @@ func TestPhantomPulse_AdaptiveResize_Fallback(t *testing.T) {
 
 func TestPhantomPulse_IsDeltaLow(t *testing.T) {
 	cfg := &config.AppConfig{PhantomPulseEnabled: true}
-	pp := &PhantomPulse{Config: cfg}
+	mm := &MockMachine{}
+	pp := NewPhantomPulse(cfg, nil, mm)
 
 	img1 := image.NewRGBA(image.Rect(0, 0, 100, 100))
 	img2 := image.NewRGBA(image.Rect(0, 0, 100, 100))
@@ -100,10 +114,12 @@ func TestDetectHardwareProfile_Structure(t *testing.T) {
 
 func TestFallbackActive(t *testing.T) {
 	cfg := &config.AppConfig{HardwareFallback: true}
-	pp := &PhantomPulse{Config: cfg}
+	mm := &MockMachine{}
+	pp := NewPhantomPulse(cfg, nil, mm)
 	assert.True(t, pp.FallbackActive())
 
 	cfg2 := &config.AppConfig{HardwareFallback: false}
-	pp2 := &PhantomPulse{Config: cfg2}
+	mm2 := &MockMachine{}
+	pp2 := NewPhantomPulse(cfg2, nil, mm2)
 	assert.False(t, pp2.FallbackActive())
 }

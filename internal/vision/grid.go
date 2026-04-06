@@ -51,8 +51,9 @@ func DrawGrid(img image.Image, config GridConfig) ([]byte, error) {
 	for r := 0; r < config.Rows; r++ {
 		for c := 0; c < config.Cols; c++ {
 			label := fmt.Sprintf("%c%d", 'A'+c, r+1)
-			x := int(float64(c)*cellWidth + cellWidth/2 - 10)
-			y := int(float64(r)*cellHeight + cellHeight/2 + 5)
+			// Move to Top-Left corner of cell for maximum visibility of content
+			x := int(float64(c)*cellWidth + 2)
+			y := int(float64(r)*cellHeight + 12)
 			addLabel(canvas, x, y, label, labelColor)
 		}
 	}
@@ -66,9 +67,9 @@ func DrawGrid(img image.Image, config GridConfig) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// SaveDebugFrame saves the provided PNG buffer to the project root for UAT.
+// SaveDebugFrame saves the provided JPG buffer to the project root for UAT.
 func SaveDebugFrame(data []byte) error {
-	return os.WriteFile("debug_capture.png", data, 0644)
+	return os.WriteFile("debug_vision.jpg", data, 0644)
 }
 
 // MapLabelToPixel converts "B5" to center (X, Y)

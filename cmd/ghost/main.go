@@ -7,27 +7,25 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/TheAngelNerozzi/ghostoperator/internal/automation"
 	"github.com/TheAngelNerozzi/ghostoperator/internal/core"
 	"github.com/TheAngelNerozzi/ghostoperator/internal/input"
 	"github.com/TheAngelNerozzi/ghostoperator/internal/llm"
-	"github.com/TheAngelNerozzi/ghostoperator/internal/vision"
+	"github.com/TheAngelNerozzi/ghostoperator/internal/machine"
 	"github.com/TheAngelNerozzi/ghostoperator/pkg/config"
-	"github.com/kbinani/screenshot"
+	"github.com/TheAngelNerozzi/ghostoperator/pkg/ui"
 	"github.com/spf13/cobra"
 )
 
-// version is now a constant for v0.1.1 release integrity.
-const version = "0.1.1"
+const version = "1.1.0"
 
-var executor = &automation.ActionExecutor{}
+var m machine.Machine = machine.NewNativeMachine()
 
 var rootCmd = &cobra.Command{
 	Use:     "ghost",
 	Version: version,
-	Short:   "GhostOperator (GO) - Open Source Visual Automation Agent",
+	Short:   "GhostOperator (GO) - Visual Automation Agent",
 	Long: `GhostOperator is a high-performance, local-first visual automation agent.
-Powered by Grid Vision System™ for sub-pixel AI precision.`,
+Powered by Grid Vision System™ and Ollama for sub-pixel AI precision.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) == 0 {
 			launchGUI()
@@ -39,7 +37,7 @@ Powered by Grid Vision System™ for sub-pixel AI precision.`,
 
 var startCmd = &cobra.Command{
 	Use:   "start",
-	Short: "Correr GhostOperator en modo terminal (segundo plano)",
+	Short: "Correr GhostOperator en modo terminal",
 	Run: func(cmd *cobra.Command, args []string) {
 		mission := "10x10"
 		if len(args) > 0 {
@@ -62,83 +60,32 @@ func startAgent(mission string, uiLog func(string)) {
 		profile := core.DetectHardwareProfile()
 		if profile.IsWeak && !cfg.HardwareFallback {
 			cfg.HardwareFallback = true
-			effBudget := core.EffectiveBudgetMs(cfg.HardwareFallback, profile, cfg.FallbackBudgetMs)
-			fmt.Printf("\033[1;33m[FALLBACK]\033[0m Hardware débil detectado (%s). Budget aumentado a %dms.\n",
-				profile.Reason, effBudget)
-		} else if !profile.IsWeak {
-			fmt.Printf("\033[1;32m[HW]\033[0m Hardware OK (RAM: %.1fGB, CPUs: %d). Budget: %dms.\n",
-				float64(profile.TotalRAMBytes)/(1024*1024*1024), profile.NumCPU, core.BudgetNormalMs)
+			fmt.Printf("\033[1;33m[FALLBACK]\033[0m Hardware débil detectado. Budget aumentado a %dms.\n", cfg.FallbackBudgetMs)
 		}
 	}
 
 	client, _ := llm.NewVisionClient(cfg.OllamaEndpoint, cfg.OllamaModel)
 
 	orch := &core.Orchestrator{
-		Vision:     client,
-		Automation: executor,
-		Config:     cfg,
+		Vision:  client,
+		Machine: m,
+		Config:  cfg,
 	}
 
-	// If mission is a density string (CLI legacy), it just listens for hotkey.
-	// If it's a natural language mission, it executes immediately.
-	if len(mission) < 6 && (mission == "10x10" || mission == "20x20") {
-		input.ListenForHotkey(func() {
-			RunAutomation(mission)
-		}, func(err error) {
-			fmt.Printf("\033[1;31m⚠️ Error: Alt+G ya está en uso por otra aplicación.\033[0m\n")
-		})
-		fmt.Printf("\033[1;36m[GHOST]\033[0m Modo Escucha Activo. Alt + G para capturar.\n")
-	} else {
-		err := orch.ProcessMission(context.Background(), mission, func(s string) {
-			fmt.Printf("\033[1;32m[MISSION]\033[0m %s\n", s)
-			if uiLog != nil {
-				uiLog(s)
-			}
-		})
-		if err != nil {
-			fmt.Printf("❌ Error en misión: %v\n", err)
-			if uiLog != nil {
-				uiLog("Error: " + err.Error())
-			}
+	err := orch.ProcessMission(context.Background(), mission, func(s string) {
+		fmt.Printf("\033[1;32m[MISSION]\033[0m %s\n", s)
+		if uiLog != nil {
+			uiLog(s)
 		}
+	})
+	if err != nil {
+		fmt.Printf("❌ Error en misión: %v\n", err)
 	}
 }
 
-// RunAutomation handles the Master Capture Flow with AI Reasoning
-func RunAutomation(density string) {
+func launchGUI() {
 	cfg := config.Load()
-	input.SetDPIAware()
-
-	fmt.Printf("\033[1;36m[EYE]\033[0m Capturando...\n")
-	bounds := screenshot.GetDisplayBounds(0)
-	rawImg, err := screenshot.CaptureRect(bounds)
-	if err != nil {
-		return
-	}
-
-	var rows, cols int
-	fmt.Sscanf(density, "%dx%d", &rows, &cols)
-	gridCfg := vision.GridConfig{Rows: rows, Cols: cols}
-	gridData, err := vision.DrawGrid(rawImg, gridCfg)
-	if err != nil {
-		return
-	}
-
-	client, _ := llm.NewVisionClient(cfg.OllamaEndpoint, cfg.OllamaModel)
-	targetLabel, err := client.Reason(context.Background(), gridData, "")
-	if err != nil {
-		fmt.Printf("❌ Error: %v\n", err)
-		return
-	}
-
-	pixelX, pixelY, _ := vision.MapLabelToPixel(targetLabel, bounds, gridCfg)
-	executor.Execute(automation.Command{
-		Type: "CLICK",
-		Params: map[string]interface{}{
-			"x": float64(pixelX * 1000 / bounds.Dx()),
-			"y": float64(pixelY * 1000 / bounds.Dy()),
-		},
-	})
+	ui.ShowDashboard(version, cfg, m, startAgent)
 }
 
 func init() {
@@ -146,18 +93,16 @@ func init() {
 }
 
 func main() {
-	// 1. Set DPI Awareness for Windows
+	// Set DPI Awareness for Windows
 	input.SetDPIAware()
 
-	// 2. First-run: auto-bootstrap Ollama + Moondream
+	// 1. Check for Ollama + Moondream model
 	if core.IsFirstRun() {
 		fmt.Println("\n\033[1;37m  👻 Bienvenido a GhostOperator v" + version + "\033[0m")
-		fmt.Println("  Configuración inicial del Motor de IA Local...")
+		fmt.Println("  Configuración inicial de IA Local...")
 
-		cfg := config.Load()
-
-		// Ensure Ollama is serve-ready and we have the vision model
 		if core.EnsureOllamaRunning() {
+			cfg := config.Load()
 			core.EnsureModel(cfg.OllamaModel)
 			core.MarkSetupDone()
 		}
@@ -167,9 +112,4 @@ func main() {
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
-}
-
-// PrintReady prints the final engine status for verification.
-func PrintReady() {
-	fmt.Printf("\033[1;32m[READY]\033[0m GhostOperator v%s Engine Loaded.\n", version)
 }

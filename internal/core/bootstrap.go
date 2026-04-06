@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
-	"strings"
 	"time"
 )
 
@@ -20,92 +19,55 @@ func IsFirstRun() bool {
 
 // MarkSetupDone creates the marker file so we don't prompt again.
 func MarkSetupDone() {
-	os.WriteFile(firstRunMarker, []byte("v2.0"), 0644)
+	os.WriteFile(firstRunMarker, []byte("v1.1.0-local"), 0644)
 }
 
-// EnsureOllamaRunning checks connectivity and starts Ollama if needed.
+// EnsureOllamaRunning attempts to start Ollama if it's not reachable.
 func EnsureOllamaRunning() bool {
-	// Quick check: is Ollama API reachable?
-	client := &http.Client{Timeout: 2 * time.Second}
+	fmt.Print("  - Verificando servidor Ollama... ")
+	client := http.Client{Timeout: 2 * time.Second}
 	_, err := client.Get("http://127.0.0.1:11434/api/version")
 	if err == nil {
-		return true // Already running
+		fmt.Println("\033[1;32mOK\033[0m")
+		return true
 	}
 
-	// Try to start it
-	fmt.Println("\033[1;33m[BOOT]\033[0m Iniciando Ollama...")
+	fmt.Print("\033[1;33mIntentando iniciar...\033[0m ")
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
-		localAppData := os.Getenv("LOCALAPPDATA")
-		ollamaPath := localAppData + `\Programs\Ollama\ollama.exe`
-		if _, err := os.Stat(ollamaPath); err == nil {
-			cmd = exec.Command(ollamaPath, "serve")
-		} else {
-			cmd = exec.Command("ollama", "serve")
-		}
+		cmd = exec.Command("cmd", "/C", "start", "ollama", "serve")
 	} else {
 		cmd = exec.Command("ollama", "serve")
 	}
 
-	cmd.Stdout = nil
-	cmd.Stderr = nil
 	if err := cmd.Start(); err != nil {
-		fmt.Printf("\033[1;31m[ERR]\033[0m No se pudo iniciar Ollama: %v\n", err)
-		fmt.Println("      Descargalo de: https://ollama.com/download")
+		fmt.Println("\033[1;31mError\033[0m")
 		return false
 	}
 
-	// Wait for it to be ready
-	for i := 0; i < 10; i++ {
-		time.Sleep(time.Second)
+	// Wait for server to wake up
+	for i := 0; i < 5; i++ {
+		time.Sleep(2 * time.Second)
 		_, err := client.Get("http://127.0.0.1:11434/api/version")
 		if err == nil {
-			fmt.Println("\033[1;32m[OK]\033[0m Ollama listo.")
+			fmt.Println("\033[1;32mOK\033[0m")
 			return true
 		}
 	}
 
-	fmt.Println("\033[1;31m[ERR]\033[0m Ollama no respondio a tiempo.")
+	fmt.Println("\033[1;31mNo responde\033[0m")
 	return false
 }
 
-// EnsureModel checks if a model is available and optionally pulls it interactively.
-func EnsureModel(model string) bool {
-	localAppData := os.Getenv("LOCALAPPDATA")
-	ollamaExe := localAppData + `\Programs\Ollama\ollama.exe`
-	if _, err := os.Stat(ollamaExe); err != nil {
-		ollamaExe = "ollama"
+// EnsureModel pulls the required moondream model if missing.
+func EnsureModel(modelName string) {
+	fmt.Printf("  - Verificando modelo %s... ", modelName)
+	cmd := exec.Command("ollama", "pull", modelName)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		fmt.Printf("\033[1;31mError al descargar %s\033[0m\n", modelName)
+	} else {
+		fmt.Println("\033[1;32mListo\033[0m")
 	}
-
-	// Check if model is already present
-	out, err := exec.Command(ollamaExe, "list").Output()
-	if err == nil {
-		if strings.Contains(string(out), model) {
-			return true
-		}
-	}
-
-	// Ask user
-	fmt.Printf("\n\033[1;37m  GhostOperator necesita el modelo '%s' para ver tu pantalla.\033[0m\n", model)
-	fmt.Println("  Es un modelo de vision ligero (≈900MB) que corre 100% local.")
-	fmt.Printf("\n  ¿Instalar %s ahora? [s/n]: ", model)
-
-	var respuesta string
-	fmt.Scanln(&respuesta)
-
-	if respuesta == "s" || respuesta == "S" {
-		fmt.Printf("\033[1;36m[>>]\033[0m Descargando %s...\n", model)
-		cmd := exec.Command(ollamaExe, "pull", model)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			fmt.Printf("\033[1;31m[ERR]\033[0m Error: %v\n", err)
-			return false
-		}
-		fmt.Println("\033[1;32m[OK]\033[0m Modelo instalado exitosamente.")
-		return true
-	}
-
-	fmt.Println("\033[1;33m[--]\033[0m Sin modelo, Ghost no podra razonar visualmente.")
-	return false
 }

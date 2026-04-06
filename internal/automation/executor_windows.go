@@ -1,3 +1,4 @@
+//go:build windows
 package automation
 
 import (
@@ -113,13 +114,26 @@ func (e *ActionExecutor) SmoothMove(targetX, targetY int32) {
 		stepX := pt.x + int32(float64(targetX-pt.x)*t)
 		stepY := pt.y + int32(float64(targetY-pt.y)*t)
 
+		// Verification: Did the user move the mouse?
+		var checkPt point
+		procGetCursorPos.Call(uintptr(unsafe.Pointer(&checkPt)))
+		if i > 1 {
+			dist := (checkPt.x-e.LastTargetX)*(checkPt.x-e.LastTargetX) + 
+				   (checkPt.y-e.LastTargetY)*(checkPt.y-e.LastTargetY)
+			if dist > 100 { // Approx 10 pixels movement
+				e.Interrupted = true
+				if e.OnInterruption != nil {
+					e.OnInterruption()
+				}
+				return
+			}
+		}
+
 		procSetCursorPos.Call(uintptr(stepX), uintptr(stepY))
+		e.LastTargetX = stepX
+		e.LastTargetY = stepY
 		time.Sleep(12 * time.Millisecond)
 	}
-
-	// Record intended position for safety checks
-	e.LastTargetX = targetX
-	e.LastTargetY = targetY
 }
 
 func (e *ActionExecutor) handleType(params map[string]interface{}) ActionResult {
