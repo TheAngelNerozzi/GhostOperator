@@ -1,16 +1,19 @@
-name: "Build and Release GhostOperator (v1)"
+name: "Build and Release GhostOperator"
 
 on:
   push:
-    branches: [ "main" ]
+    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
   contents: write
 
+env:
+  APP_NAME: "ghost"
+
 jobs:
   build-windows:
-    name: Build & Release Windows (AMD64)
+    name: Build Windows (AMD64)
     runs-on: windows-latest
     steps:
       - name: Checkout Code
@@ -19,20 +22,156 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version: "1.26"
           cache: true
 
       - name: Build Binary
-        run: |
-          go build -ldflags "-s -w" -o ghost-windows-amd64.exe ./cmd/ghost
+        run: go build -ldflags "-s -w" -o ghost-windows-amd64.exe ./cmd/ghost
 
-      - name: Create or Update Release
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ghost-windows-amd64
+          path: ghost-windows-amd64.exe
+
+  build-linux:
+    name: Build Linux (AMD64)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache: true
+
+      - name: Build Binary
+        run: GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ghost-linux-amd64 ./cmd/ghost
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ghost-linux-amd64
+          path: ghost-linux-amd64
+
+  build-darwin:
+    name: Build macOS (AMD64)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache: true
+
+      - name: Build Binary
+        run: GOOS=darwin GOARCH=amd64 go build -ldflags "-s -w" -o ghost-darwin-amd64 ./cmd/ghost
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ghost-darwin-amd64
+          path: ghost-darwin-amd64
+
+  build-darwin-arm:
+    name: Build macOS (ARM64)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache: true
+
+      - name: Build Binary
+        run: GOOS=darwin GOARCH=arm64 go build -ldflags "-s -w" -o ghost-darwin-arm64 ./cmd/ghost
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ghost-darwin-arm64
+          path: ghost-darwin-arm64
+
+  release:
+    name: Create Release
+    needs: [build-windows, build-linux, build-darwin, build-darwin-arm]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: Prepare Files
+        run: |
+          mkdir -p ./release
+          cp ./artifacts/ghost-windows-amd64/ghost-windows-amd64.exe ./release/
+          cp ./artifacts/ghost-linux-amd64/ghost-linux-amd64 ./release/
+          chmod +x ./release/ghost-linux-amd64
+          cp ./artifacts/ghost-darwin-amd64/ghost-darwin-amd64 ./release/
+          cp ./artifacts/ghost-darwin-arm64/ghost-darwin-arm64 ./release/
+
+      - name: Generate Changelog
+        id: changelog
+        run: |
+          TAG=${GITHUB_REF_NAME}
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          {
+            echo "## What's New in ${TAG}"
+            echo ""
+            echo "### Security"
+            echo "- Hardened LLM/Ollama client with context timeouts, TLS config, and input sanitization"
+            echo "- Fixed race conditions in phantom_pulse and health check subsystems"
+            echo "- Added input validation in executor, automation safety, and config parsing"
+            echo "- Secured vision/screen capture with bounds checking and resource cleanup"
+            echo "- Patched machine abstraction layers with proper error handling"
+            echo "- Improved Windows input/hotkey handlers with mutex synchronization"
+            echo "- Hardened install scripts against command injection and path traversal"
+            echo "- Added timeout contexts to bootstrap and dashboard HTTP handlers"
+            echo ""
+            echo "### UI Redesign"
+            echo "- Complete minimalist monochrome dark theme (Zinc palette)"
+            echo "- New Inter + JetBrains Mono typography system"
+            echo "- Compact header with language selector and health badge"
+            echo "- Redesigned sidebar: Engine, Vision System, System info cards"
+            echo "- Terminal-style console with subtle log entries"
+            echo ""
+            echo "### i18n — Multilanguage Support"
+            echo "- Full translations: English, Spanish, French, Chinese"
+            echo "- Language preference persisted in localStorage"
+            echo "- Auto-detected platform display"
+            echo ""
+            echo "### Cross-Platform Builds"
+            echo "- Windows AMD64, Linux AMD64, macOS AMD64, macOS ARM64"
+            echo "- CI workflow rewritten for multi-platform release automation"
+            echo ""
+            echo "### Downloads"
+            echo "| Platform | File |"
+            echo "|----------|------|"
+            echo "| Windows | ghost-windows-amd64.exe |"
+            echo "| Linux | ghost-linux-amd64 |"
+            echo "| macOS (Intel) | ghost-darwin-amd64 |"
+            echo "| macOS (Apple Silicon) | ghost-darwin-arm64 |"
+          } > ./CHANGELOG.md
+
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: "latest"
-          name: "GhostOperator (Latest Stable)"
-          body: "Auto-compiled binary from the latest push. Includes Grid Vision System™ and PhantomPulse™ v1.0.1 improvements."
-          files: ghost-windows-amd64.exe
+          tag_name: ${{ steps.changelog.outputs.tag }}
+          name: "GhostOperator ${{ steps.changelog.outputs.tag }}"
+          body_path: ./CHANGELOG.md
+          files: ./release/*
           make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
