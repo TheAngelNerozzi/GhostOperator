@@ -58,93 +58,89 @@ jobs:
       - name: Build macOS ARM64
         run: GOOS=darwin GOARCH=arm64 go build -ldflags "-s -w" -o ./release/ghost-darwin-arm64 ./cmd/ghost
 
-      - name: Compute Checksums
-        id: checksums
+      - name: Compute Checksums and Generate Manifest
+        id: manifest
+        env:
+          VER: ${{ steps.version.outputs.version }}
+          SHA: ${{ steps.version.outputs.short_sha }}
         run: |
           cd ./release
+
+          # Compute checksums and write CHECKSUMS.txt
           echo "## SHA256 Checksums" > ../CHECKSUMS.txt
           echo "" >> ../CHECKSUMS.txt
           for file in *; do
             if [ -f "$file" ]; then
-              SHA=$(sha256sum "$file" | awk '{print $1}')
-              echo "${SHA}  ${file}" >> ../CHECKSUMS.txt
-              echo "checksum_${file}=${SHA}" >> "$GITHUB_OUTPUT"
-              SIZE=$(stat -c%s "$file")
-              echo "size_${file}=${SIZE}" >> "$GITHUB_OUTPUT"
+              FILE_SHA=$(sha256sum "$file" | awk '{print $1}')
+              FILE_SIZE=$(stat -c%s "$file")
+              echo "${FILE_SHA}  ${file}" >> ../CHECKSUMS.txt
+              echo "  ${file}: sha256=${FILE_SHA} size=${FILE_SIZE}"
             fi
           done
+          echo ""
           cat ../CHECKSUMS.txt
 
-      - name: Generate latest.json Manifest
-        env:
-          VER: ${{ steps.version.outputs.version }}
-          SHA: ${{ steps.version.outputs.short_sha }}
-          WIN_SHA: ${{ steps.checksums.outputs.checksum_ghost-windows-amd64.exe }}
-          LIN_SHA: ${{ steps.checksums.outputs.checksum_ghost-linux-amd64 }}
-          MAC_SHA: ${{ steps.checksums.outputs.checksum_ghost-darwin-amd64 }}
-          ARM_SHA: ${{ steps.checksums.outputs.checksum_ghost-darwin-arm64 }}
-          WIN_SZ: ${{ steps.checksums.outputs.size_ghost-windows-amd64.exe }}
-          LIN_SZ: ${{ steps.checksums.outputs.size_ghost-linux-amd64 }}
-          MAC_SZ: ${{ steps.checksums.outputs.size_ghost-darwin-amd64 }}
-          ARM_SZ: ${{ steps.checksums.outputs.size_ghost-darwin-arm64 }}
-        run: |
-          cat > ./release/latest.json << 'MANIFEST_EOF'
-          {
-            "version": "PLACEHOLDER_VER",
-            "commit": "PLACEHOLDER_SHA",
-            "build_time": "PLACEHOLDER_TIME",
-            "channel": "stable",
-            "published_at": "PLACEHOLDER_PUBLISHED",
-            "min_version": "1.4.0",
-            "mandatory": false,
-            "changelog": "Auto-update from main branch build",
-            "assets": {
-              "ghost-windows-amd64.exe": {
-                "url": "https://github.com/TheAngelNerozzi/GhostOperator/releases/download/latest/ghost-windows-amd64.exe",
-                "sha256": "PLACEHOLDER_WIN_SHA",
-                "size": PLACEHOLDER_WIN_SZ,
-                "platform": "windows-amd64"
-              },
-              "ghost-linux-amd64": {
-                "url": "https://github.com/TheAngelNerozzi/GhostOperator/releases/download/latest/ghost-linux-amd64",
-                "sha256": "PLACEHOLDER_LIN_SHA",
-                "size": PLACEHOLDER_LIN_SZ,
-                "platform": "linux-amd64"
-              },
-              "ghost-darwin-amd64": {
-                "url": "https://github.com/TheAngelNerozzi/GhostOperator/releases/download/latest/ghost-darwin-amd64",
-                "sha256": "PLACEHOLDER_MAC_SHA",
-                "size": PLACEHOLDER_MAC_SZ,
-                "platform": "darwin-amd64"
-              },
-              "ghost-darwin-arm64": {
-                "url": "https://github.com/TheAngelNerozzi/GhostOperator/releases/download/latest/ghost-darwin-arm64",
-                "sha256": "PLACEHOLDER_ARM_SHA",
-                "size": PLACEHOLDER_ARM_SZ,
-                "platform": "darwin-arm64"
+          # Generate latest.json using Python (robust, no sed/heredoc issues)
+          python3 << 'PYEOF'
+          import json, os, hashlib, time
+
+          ver = os.environ["VER"]
+          sha = os.environ["SHA"]
+          now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+          assets = {}
+          release_dir = "."
+          for fname in sorted(os.listdir(release_dir)):
+              fpath = os.path.join(release_dir, fname)
+              if not os.path.isfile(fpath):
+                  continue
+              # Compute SHA256
+              h = hashlib.sha256()
+              with open(fpath, "rb") as f:
+                  for chunk in iter(lambda: f.read(8192), b""):
+                      h.update(chunk)
+              file_sha = h.hexdigest()
+              file_size = os.path.getsize(fpath)
+
+              # Map filename to platform identifier
+              platform_map = {
+                  "ghost-windows-amd64.exe": "windows-amd64",
+                  "ghost-linux-amd64": "linux-amd64",
+                  "ghost-darwin-amd64": "darwin-amd64",
+                  "ghost-darwin-arm64": "darwin-arm64",
               }
-            }
+              platform = platform_map.get(fname, fname)
+              download_url = f"https://github.com/TheAngelNerozzi/GhostOperator/releases/download/latest/{fname}"
+
+              assets[fname] = {
+                  "url": download_url,
+                  "sha256": file_sha,
+                  "size": file_size,
+                  "platform": platform,
+              }
+
+          manifest = {
+              "version": ver,
+              "commit": sha,
+              "build_time": now,
+              "channel": "stable",
+              "published_at": now,
+              "min_version": "1.4.0",
+              "mandatory": False,
+              "changelog": "Auto-update from main branch build",
+              "assets": assets,
           }
-          MANIFEST_EOF
 
-          # Use sed for reliable in-place substitution
-          NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          PUBLISHED=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          sed -i "s|PLACEHOLDER_VER|${VER}|g" ./release/latest.json
-          sed -i "s|PLACEHOLDER_SHA|${SHA}|g" ./release/latest.json
-          sed -i "s|PLACEHOLDER_TIME|${NOW}|g" ./release/latest.json
-          sed -i "s|PLACEHOLDER_PUBLISHED|${PUBLISHED}|g" ./release/latest.json
-          sed -i "s|PLACEHOLDER_WIN_SHA|${WIN_SHA}|g" ./release/latest.json
-          sed -i "s|PLACEHOLDER_LIN_SHA|${LIN_SHA}|g" ./release/latest.json
-          sed -i "s|PLACEHOLDER_MAC_SHA|${MAC_SHA}|g" ./release/latest.json
-          sed -i "s|PLACEHOLDER_ARM_SHA|${ARM_SHA}|g" ./release/latest.json
-          sed -i "s|PLACEHOLDER_WIN_SZ|${WIN_SZ}|g" ./release/latest.json
-          sed -i "s|PLACEHOLDER_LIN_SZ|${LIN_SZ}|g" ./release/latest.json
-          sed -i "s|PLACEHOLDER_MAC_SZ|${MAC_SZ}|g" ./release/latest.json
-          sed -i "s|PLACEHOLDER_ARM_SZ|${ARM_SZ}|g" ./release/latest.json
+          with open("latest.json", "w") as f:
+              json.dump(manifest, f, indent=2)
 
-          echo "=== Generated latest.json ==="
-          cat ./release/latest.json | python3 -m json.tool
+          print("=== Generated latest.json ===")
+          print(json.dumps(manifest, indent=2))
+          print("")
+          print(f"Assets: {len(assets)} binaries")
+          for name, info in assets.items():
+              print(f"  {name}: {info['size']} bytes, sha256={info['sha256'][:16]}...")
+          PYEOF
 
       - name: Upload Release Artifacts
         uses: actions/upload-artifact@v4
