@@ -1,4 +1,4 @@
-//go:build windows
+//go:build windows && !386
 package automation
 
 import (
@@ -348,7 +348,6 @@ func (e *ActionExecutor) handleType(params map[string]interface{}) ActionResult 
 
 // inputSize is the correct size of the Windows INPUT structure on 64-bit:
 // uint32 type (4) + uint32 padding (4) + union (32) = 40 bytes
-//go:build !386
 const inputSize = 40
 
 func (e *ActionExecutor) sendMouseClick(flags uint32) error {
