@@ -275,264 +275,578 @@ func ShowDashboard(version string, cfg *config.AppConfig, m machine.Machine, onS
 }
 
 const dashboardHTML = `<!DOCTYPE html>
-<html lang="es">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>GHOST OPERATOR v%s</title>
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet">
 <style>
-  :root {
-    --bg: #050505;
-    --surface: #0a0a0a;
-    --border: #1a1a1a;
-    --text: #ffffff;
-    --muted: #888888;
-    --accent: #555555;
-    --success: #00ff88;
-    --error: #ff4444;
-    --radius: 12px;
-  }
-  
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  
-  body { 
-    background: var(--bg); 
-    color: var(--text); 
-    font-family: 'Outfit', sans-serif; 
-    height: 100vh; 
-    display: flex; 
-    flex-direction: column; 
-    overflow: hidden;
-  }
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#09090b;
+  --surface:#111113;
+  --surface2:#18181b;
+  --border:#27272a;
+  --border-light:#3f3f46;
+  --text:#fafafa;
+  --text-secondary:#a1a1aa;
+  --text-dim:#52525b;
+  --mono:'JetBrains Mono',monospace;
+  --sans:'Inter',system-ui,-apple-system,sans-serif;
+  --radius:10px;
+  --radius-sm:6px;
+  --transition:150ms cubic-bezier(.4,0,.2,1);
+}
+html,body{height:100%%;overflow:hidden}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:var(--sans);
+  display:flex;
+  flex-direction:column;
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+}
 
-  header {
-    padding: 24px 40px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-  .brand { font-weight: 700; font-size: 16px; letter-spacing: 0.2em; text-transform: uppercase; }
-  .brand span { color: var(--muted); font-weight: 400; margin-left: 5px; font-size: 10px; }
+/* ── HEADER ── */
+header{
+  height:52px;
+  padding:0 24px;
+  border-bottom:1px solid var(--border);
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  flex-shrink:0;
+  background:var(--surface);
+}
+.header-left{display:flex;align-items:center;gap:12px}
+.logo{
+  font-size:11px;
+  font-weight:600;
+  letter-spacing:.18em;
+  text-transform:uppercase;
+  color:var(--text);
+}
+.logo .ver{
+  font-size:9px;
+  font-weight:400;
+  color:var(--text-dim);
+  margin-left:6px;
+  letter-spacing:.08em;
+}
+.header-right{display:flex;align-items:center;gap:16px}
+.health-badge{
+  display:flex;
+  align-items:center;
+  gap:7px;
+  padding:5px 12px;
+  background:var(--surface2);
+  border:1px solid var(--border);
+  border-radius:20px;
+  font-family:var(--mono);
+  font-size:10px;
+  letter-spacing:.06em;
+  color:var(--text-secondary);
+}
+.health-dot{
+  width:6px;height:6px;border-radius:50%%;
+  background:var(--text-dim);
+  transition:background var(--transition),box-shadow var(--transition);
+}
+.health-dot.ok{background:#a1a1aa;box-shadow:0 0 6px rgba(161,161,170,.3)}
+.health-dot.err{background:#71717a;box-shadow:0 0 8px rgba(113,113,122,.4)}
 
-  main {
-    flex: 1;
-    display: grid;
-    grid-template-columns: 320px 1fr;
-    overflow: hidden;
-  }
+/* ── LANG SELECT ── */
+.lang-select{
+  appearance:none;
+  background:var(--surface2);
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  padding:4px 24px 4px 10px;
+  color:var(--text-secondary);
+  font-family:var(--sans);
+  font-size:11px;
+  font-weight:500;
+  cursor:pointer;
+  outline:none;
+  transition:border-color var(--transition);
+  background-image:url("data:image/svg+xml,%%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='none'%%3E%%3Cpath d='M1 1l4 4 4-4' stroke='%%2371717a' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%%3C/svg%%3E");
+  background-repeat:no-repeat;
+  background-position:right 8px center;
+}
+.lang-select:hover{border-color:var(--border-light)}
+.lang-select:focus{border-color:var(--text-dim)}
 
-  aside {
-    border-right: 1px solid var(--border);
-    padding: 40px;
-    display: flex;
-    flex-direction: column;
-    gap: 40px;
-  }
-  .sidebar-section { display: flex; flex-direction: column; gap: 15px; }
-  .section-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.15em; color: var(--muted); font-weight: 700; }
-  
-  .status-card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-  .status-item { display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-family: 'JetBrains Mono', monospace; }
-  .dot { width: 6px; height: 6px; border-radius: 50%%; background: var(--success); }
-  .dot.error { background: var(--error); box-shadow: 0 0 10px var(--error); }
+/* ── LAYOUT ── */
+main{
+  flex:1;
+  display:grid;
+  grid-template-columns:260px 1fr;
+  overflow:hidden;
+}
 
-  .terminal {
-    background: rgba(0,0,0,0.5);
-    display: flex;
-    flex-direction: column;
-    padding: 40px;
-    position: relative;
-    overflow: hidden;
-  }
-  #log {
-    flex: 1;
-    overflow-y: auto;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 14px;
-    line-height: 1.6;
-    color: #eee;
-    padding-bottom: 100px;
-  }
-  #log div { margin-bottom: 12px; border-left: 2px solid var(--border); padding-left: 15px; }
-  .mission-log { color: var(--success); }
+/* ── SIDEBAR ── */
+aside{
+  border-right:1px solid var(--border);
+  padding:24px 20px;
+  display:flex;
+  flex-direction:column;
+  gap:28px;
+  overflow-y:auto;
+  background:var(--surface);
+}
+.sidebar-group{display:flex;flex-direction:column;gap:12px}
+.sidebar-label{
+  font-size:9px;
+  font-weight:600;
+  text-transform:uppercase;
+  letter-spacing:.16em;
+  color:var(--text-dim);
+  padding:0 4px;
+}
+.info-card{
+  background:var(--surface2);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  padding:14px 16px;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+.info-row{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  font-size:12px;
+}
+.info-row .label{color:var(--text-secondary);font-weight:400}
+.info-row .value{color:var(--text);font-family:var(--mono);font-size:11px;font-weight:400}
+.info-row .value.ok{color:var(--text-secondary)}
+.info-row .value.err{color:var(--text-dim)}
 
-  .input-container {
-    position: absolute;
-    bottom: 40px;
-    left: 40px;
-    right: 40px;
-    display: flex;
-    gap: 15px;
-  }
-  input {
-    flex: 1;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 16px 24px;
-    color: white;
-    font-family: inherit;
-    font-size: 15px;
-    outline: none;
-    transition: border-color 0.2s;
-  }
-  input:focus { border-color: var(--muted); }
-  
-  button {
-    background: white;
-    color: black;
-    border: none;
-    padding: 0 30px;
-    border-radius: var(--radius);
-    font-weight: 700;
-    text-transform: uppercase;
-    font-size: 12px;
-    cursor: pointer;
-    letter-spacing: 0.1em;
-    transition: transform 0.1s;
-  }
-  button:active { transform: scale(0.98); }
+/* ── CONSOLE ── */
+.console{
+  display:flex;
+  flex-direction:column;
+  position:relative;
+  overflow:hidden;
+}
+#log{
+  flex:1;
+  overflow-y:auto;
+  padding:28px 32px 110px 32px;
+  font-family:var(--mono);
+  font-size:12.5px;
+  line-height:1.7;
+  color:var(--text-secondary);
+}
+#log div{
+  padding:3px 0 3px 14px;
+  border-left:1px solid var(--border);
+  margin-bottom:4px;
+  transition:border-color var(--transition);
+}
+#log div:hover{border-left-color:var(--border-light)}
+#log .sys{color:var(--text-dim);font-size:11px}
+#log .cmd{color:var(--text)}
+#log .res{color:var(--text-secondary)}
+#log .err{color:#71717a}
 
-  /* Interruption Modal */
-  #modal {
-    position: fixed; top: 0; left: 0; width: 100%%; height: 100%%;
-    background: rgba(0,0,0,0.9); backdrop-filter: blur(10px);
-    display: none; flex-direction: column; align-items: center; justify-content: center;
-    z-index: 1000;
-    text-align: center;
-  }
-  .modal-btn { background: #fff; color: #000; border: none; padding: 15px 40px; border-radius: 12px; font-weight: 700; margin-top: 30px; cursor: pointer; }
+/* ── INPUT BAR ── */
+.input-bar{
+  position:absolute;
+  bottom:0;left:0;right:0;
+  padding:20px 32px 24px 32px;
+  background:linear-gradient(transparent,var(--bg) 40%%);
+  display:flex;
+  gap:10px;
+  align-items:center;
+}
+.prompt{
+  font-family:var(--mono);
+  font-size:12px;
+  color:var(--text-dim);
+  user-select:none;
+  flex-shrink:0;
+}
+#intent{
+  flex:1;
+  background:transparent;
+  border:none;
+  border-bottom:1px solid var(--border);
+  padding:10px 0;
+  color:var(--text);
+  font-family:var(--mono);
+  font-size:13px;
+  outline:none;
+  transition:border-color var(--transition);
+}
+#intent:focus{border-bottom-color:var(--text-secondary)}
+#intent::placeholder{color:var(--text-dim)}
+.exec-btn{
+  background:var(--text);
+  color:var(--bg);
+  border:none;
+  padding:9px 22px;
+  border-radius:var(--radius-sm);
+  font-family:var(--sans);
+  font-size:11px;
+  font-weight:600;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  cursor:pointer;
+  transition:opacity var(--transition);
+  flex-shrink:0;
+}
+.exec-btn:hover{opacity:.85}
+.exec-btn:active{opacity:.7}
 
-  ::-webkit-scrollbar { width: 4px; }
-  ::-webkit-scrollbar-thumb { background: var(--border); }
+/* ── MODAL ── */
+#modal{
+  position:fixed;inset:0;
+  background:rgba(9,9,11,.92);
+  backdrop-filter:blur(20px);
+  display:none;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  z-index:1000;
+  text-align:center;
+}
+.modal-icon{
+  width:56px;height:56px;
+  border:1px solid var(--border-light);
+  border-radius:50%%;
+  display:flex;align-items:center;justify-content:center;
+  margin-bottom:20px;
+  color:var(--text-secondary);
+  font-size:22px;
+}
+.modal-title{
+  font-size:16px;
+  font-weight:600;
+  color:var(--text);
+  letter-spacing:.02em;
+  margin-bottom:8px;
+}
+.modal-desc{
+  font-size:13px;
+  color:var(--text-secondary);
+  max-width:340px;
+  line-height:1.5;
+}
+.modal-btn{
+  margin-top:28px;
+  background:var(--text);
+  color:var(--bg);
+  border:none;
+  padding:11px 36px;
+  border-radius:var(--radius-sm);
+  font-family:var(--sans);
+  font-size:12px;
+  font-weight:600;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+  cursor:pointer;
+  transition:opacity var(--transition);
+}
+.modal-btn:hover{opacity:.85}
 
-  /* Responsive: collapse sidebar on small screens */
-  @media (max-width: 768px) {
-    main { grid-template-columns: 1fr; }
-    aside { display: none; }
-    header { padding: 16px 20px; }
-    .terminal { padding: 20px; }
-    .input-container { left: 20px; right: 20px; bottom: 20px; }
-  }
+/* ── SCROLLBAR ── */
+::-webkit-scrollbar{width:3px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--border-light)}
+
+/* ── RESPONSIVE ── */
+@media(max-width:800px){
+  main{grid-template-columns:1fr}
+  aside{display:none}
+  header{padding:0 16px}
+  #log{padding:20px 18px 100px 18px}
+  .input-bar{padding:16px 18px 20px 18px}
+}
 </style>
 </head>
 <body>
+
+<!-- Interruption Modal -->
 <div id="modal">
-  <div style="font-size: 48px; margin-bottom: 20px;">⚠️</div>
-  <div style="font-weight: 700; font-size: 24px; color:white;">¡INTERRUPCIÓN DETECTADA!</div>
-  <div style="color: var(--muted); margin-top: 10px;">Has movido el ratón. ¿Deseas que GhostOperator continúe?</div>
-  <button class="modal-btn" onclick="continuar()">CONTINUAR MISIÓN</button>
+  <div class="modal-icon">!</div>
+  <div class="modal-title" data-i18n="modal_title">INTERRUPTION DETECTED</div>
+  <div class="modal-desc" data-i18n="modal_desc">Mouse movement detected. Continue mission?</div>
+  <button class="modal-btn" onclick="continuar()" data-i18n="modal_btn">Continue Mission</button>
 </div>
+
+<!-- Header -->
 <header>
-  <div class="brand">GHOST OPERATOR <span>v%s</span></div>
-  <div class="status-item" style="gap:10px;">
-    <div id="health-dot" class="dot"></div>
-    <span style="font-family:'JetBrains Mono'; font-size:11px; letter-spacing:0.1em;" id="health-text">LOCAL AI: LISTO</span>
+  <div class="header-left">
+    <div class="logo">Ghost Operator<span class="ver">v%s</span></div>
+  </div>
+  <div class="header-right">
+    <select class="lang-select" id="lang" onchange="setLang(this.value)">
+      <option value="es">Espanol</option>
+      <option value="en" selected>English</option>
+      <option value="fr">Francais</option>
+      <option value="zh">中文</option>
+    </select>
+    <div class="health-badge">
+      <div class="health-dot" id="health-dot"></div>
+      <span id="health-text" data-i18n="ai_checking">Checking AI...</span>
+    </div>
   </div>
 </header>
 
+<!-- Main Layout -->
 <main>
   <aside>
-    <div class="sidebar-section">
-      <div class="section-title">Hardware Profile</div>
-      <div class="status-card">
-        <div class="status-item">
-          <span id="ollama-label">Ollama</span>
-          <span id="ollama-status" style="color:var(--muted)">...</span>
+    <div class="sidebar-group">
+      <div class="sidebar-label" data-i18n="sec_engine">Engine</div>
+      <div class="info-card">
+        <div class="info-row">
+          <span class="label" id="ollama-label">Ollama</span>
+          <span class="value" id="ollama-status">...</span>
         </div>
-        <div class="status-item" id="model-container">
-          <span id="model-label">Model</span>
-          <span id="model-status" style="color:var(--muted)">...</span>
+        <div class="info-row">
+          <span class="label" id="model-label">Model</span>
+          <span class="value" id="model-status">...</span>
         </div>
       </div>
     </div>
-
-    <div class="sidebar-section">
-      <div class="section-title">Grid System</div>
-      <div class="status-card">
-        <div class="status-item">
-          <span>Densidad</span>
-          <span id="grid-density">...</span>
+    <div class="sidebar-group">
+      <div class="sidebar-label" data-i18n="sec_vision">Vision System</div>
+      <div class="info-card">
+        <div class="info-row">
+          <span class="label" data-i18n="lbl_density">Density</span>
+          <span class="value" id="grid-density">...</span>
         </div>
-        <div class="status-item">
-          <span>Alpha-Numeric</span>
-          <span style="color:var(--success)">Activo</span>
+        <div class="info-row">
+          <span class="label" data-i18n="lbl_grid">Grid Overlay</span>
+          <span class="value ok" data-i18n="lbl_active">Active</span>
+        </div>
+      </div>
+    </div>
+    <div class="sidebar-group">
+      <div class="sidebar-label" data-i18n="sec_system">System</div>
+      <div class="info-card">
+        <div class="info-row">
+          <span class="label" data-i18n="lbl_platform">Platform</span>
+          <span class="value" id="sys-platform">...</span>
+        </div>
+        <div class="info-row">
+          <span class="label" data-i18n="lbl_hotkey">Hotkey</span>
+          <span class="value">Alt+G</span>
         </div>
       </div>
     </div>
   </aside>
 
-  <div class="terminal">
+  <div class="console">
     <div id="log">
-      <div class="mission-log">GHOST CONSOLE v%s</div>
-      <div>Esperando instrucciones de misión...</div>
+      <div class="sys">Ghost Operator v%s</div>
+      <div class="sys" data-i18n="msg_ready">Ready. Awaiting instructions...</div>
     </div>
-    <div class="input-container">
+    <div class="input-bar">
+      <span class="prompt">></span>
       <input type="hidden" id="csrf_token" value="%s">
-      <input type="text" id="intent" placeholder="Orden natural (ej: 'abre chrome', 'busca gmail'...)" autofocus>
-      <button onclick="ejecutar()">Ejecutar</button>
+      <input type="text" id="intent" data-i18n-placeholder="input_placeholder" placeholder="Enter a command..." autofocus>
+      <button class="exec-btn" onclick="ejecutar()" data-i18n="btn_exec">Run</button>
     </div>
   </div>
 </main>
 
 <script>
+/* ══════════════════════════════════════
+   i18n — Internationalization System
+   ══════════════════════════════════════ */
+const i18n = {
+  en: {
+    ai_checking: "Checking AI...",
+    ai_ready: "AI: Online",
+    ai_offline: "AI: Offline",
+    sec_engine: "Engine",
+    sec_vision: "Vision System",
+    sec_system: "System",
+    lbl_density: "Density",
+    lbl_grid: "Grid Overlay",
+    lbl_active: "Active",
+    lbl_platform: "Platform",
+    lbl_hotkey: "Hotkey",
+    msg_ready: "Ready. Awaiting instructions...",
+    input_placeholder: "Enter a command...",
+    btn_exec: "Run",
+    modal_title: "INTERRUPTION DETECTED",
+    modal_desc: "Mouse movement detected. Continue mission?",
+    modal_btn: "Continue Mission",
+    log_mission: "Mission:",
+    log_resuming: "Resuming mission...",
+    status_connected: "Connected",
+    status_disconnected: "Disconnected",
+    status_loaded: "Loaded",
+    status_na: "N/A"
+  },
+  es: {
+    ai_checking: "Verificando IA...",
+    ai_ready: "IA: En linea",
+    ai_offline: "IA: Desconectada",
+    sec_engine: "Motor",
+    sec_vision: "Sistema de Vision",
+    sec_system: "Sistema",
+    lbl_density: "Densidad",
+    lbl_grid: "Cuadricula",
+    lbl_active: "Activo",
+    lbl_platform: "Plataforma",
+    lbl_hotkey: "Atajo",
+    msg_ready: "Listo. Esperando instrucciones...",
+    input_placeholder: "Ingresa una orden...",
+    btn_exec: "Ejecutar",
+    modal_title: "INTERRUPCION DETECTADA",
+    modal_desc: "Movimiento del raton detectado. Continuar mision?",
+    modal_btn: "Continuar Mision",
+    log_mission: "Mision:",
+    log_resuming: "Reanudando mision...",
+    status_connected: "Conectado",
+    status_disconnected: "Desconectado",
+    status_loaded: "Cargado",
+    status_na: "N/A"
+  },
+  fr: {
+    ai_checking: "Verification IA...",
+    ai_ready: "IA: En ligne",
+    ai_offline: "IA: Hors ligne",
+    sec_engine: "Moteur",
+    sec_vision: "Systeme de Vision",
+    sec_system: "Systeme",
+    lbl_density: "Densite",
+    lbl_grid: "Grille",
+    lbl_active: "Actif",
+    lbl_platform: "Plateforme",
+    lbl_hotkey: "Raccourci",
+    msg_ready: "Pret. En attente d'instructions...",
+    input_placeholder: "Entrez une commande...",
+    btn_exec: "Executer",
+    modal_title: "INTERRUPTION DETECTEE",
+    modal_desc: "Mouvement de souris detecte. Continuer la mission?",
+    modal_btn: "Continuer la Mission",
+    log_mission: "Mission :",
+    log_resuming: "Reprise de la mission...",
+    status_connected: "Connecte",
+    status_disconnected: "Deconnecte",
+    status_loaded: "Charge",
+    status_na: "N/A"
+  },
+  zh: {
+    ai_checking: "正在检查 AI...",
+    ai_ready: "AI: 在线",
+    ai_offline: "AI: 离线",
+    sec_engine: "引擎",
+    sec_vision: "视觉系统",
+    sec_system: "系统",
+    lbl_density: "密度",
+    lbl_grid: "网格覆盖",
+    lbl_active: "已激活",
+    lbl_platform: "平台",
+    lbl_hotkey: "快捷键",
+    msg_ready: "就绪。等待指令...",
+    input_placeholder: "输入指令...",
+    btn_exec: "执行",
+    modal_title: "检测到中断",
+    modal_desc: "检测到鼠标移动。是否继续任务?",
+    modal_btn: "继续任务",
+    log_mission: "任务:",
+    log_resuming: "正在恢复任务...",
+    status_connected: "已连接",
+    status_disconnected: "已断开",
+    status_loaded: "已加载",
+    status_na: "N/A"
+  }
+};
+
+let currentLang = localStorage.getItem('ghost_lang') || 'en';
+
+function t(key) {
+  return (i18n[currentLang] && i18n[currentLang][key]) || i18n.en[key] || key;
+}
+
+function setLang(lang) {
+  currentLang = lang;
+  localStorage.setItem('ghost_lang', lang);
+  applyTranslations();
+}
+
+function applyTranslations() {
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    el.textContent = t(el.getAttribute('data-i18n'));
+  });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+    el.placeholder = t(el.getAttribute('data-i18n-placeholder'));
+  });
+  document.documentElement.lang = currentLang;
+}
+
+/* ══════════════════════════════════════
+   Core Logic
+   ══════════════════════════════════════ */
 const log = document.getElementById('log');
 const input = document.getElementById('intent');
 const modal = document.getElementById('modal');
 const csrfToken = document.getElementById('csrf_token').value;
 
+// Detect platform
+(function detectPlatform(){
+  const ua = navigator.userAgent.toLowerCase();
+  let p = 'Unknown';
+  if(ua.includes('win')) p = 'Windows';
+  else if(ua.includes('mac')) p = 'macOS';
+  else if(ua.includes('linux')) p = 'Linux';
+  document.getElementById('sys-platform').textContent = p;
+})();
+
+// Init language
+document.getElementById('lang').value = currentLang;
+applyTranslations();
+
 input.addEventListener('keydown', e => { if(e.key === 'Enter') ejecutar(); });
 
+function appendLog(text, cls) {
+  const d = document.createElement('div');
+  d.className = cls || '';
+  d.textContent = text;
+  log.appendChild(d);
+  log.scrollTop = log.scrollHeight;
+}
+
 function continuar() {
-  fetch('/api/resume', {method: 'POST', headers: {'X-CSRF-Token': csrfToken}})
+  fetch('/api/resume', {method:'POST',headers:{'X-CSRF-Token':csrfToken}})
     .then(() => {
-        modal.style.display = 'none';
-        const nd = document.createElement('div');
-        nd.className = 'mission-log';
-        nd.textContent = '>> Reanudando misión...';
-        log.appendChild(nd);
+      modal.style.display = 'none';
+      appendLog('>> ' + t('log_resuming'), 'cmd');
     });
 }
 
 function ejecutar() {
-  const v = input.value.trim(); if(!v) return;
-  const d = document.createElement('div');
-  d.className = 'mission-log';
-  d.textContent = '>> Misión: ' + v;
-  log.appendChild(d);
+  const v = input.value.trim();
+  if(!v) return;
+  appendLog('>> ' + t('log_mission') + ' ' + v, 'cmd');
   input.value = '';
-  
+
   const body = new URLSearchParams({intent: v, csrf_token: csrfToken});
-  fetch('/mission', {method: 'POST', body: body, headers: {'X-CSRF-Token': csrfToken}})
+  fetch('/mission', {method:'POST',body:body,headers:{'X-CSRF-Token':csrfToken}})
     .then(r => {
       const reader = r.body.getReader();
       const dec = new TextDecoder();
       function read() {
-        reader.read().then(({done, value}) => {
+        reader.read().then(({done,value}) => {
           if(done) return;
-          const content = dec.decode(value);
-          const lines = content.split('\n');
-          lines.forEach(l => {
-            if(l.startsWith('data: ')) {
-               const msg = l.slice(6);
-               if (msg.includes('USER_INTERRUPTED')) {
-                 modal.style.display = 'flex';
-               }
-               const nd = document.createElement('div');
-               nd.textContent = msg;
-               log.appendChild(nd);
-               log.scrollTop = log.scrollHeight;
+          dec.decode(value).split('\n').forEach(l => {
+            if(!l.startsWith('data: ')) return;
+            const msg = l.slice(6);
+            if(msg.includes('USER_INTERRUPTED')) {
+              modal.style.display = 'flex';
             }
+            appendLog(msg, msg.includes('Error') ? 'err' : 'res');
           });
           read();
         });
@@ -541,49 +855,43 @@ function ejecutar() {
     });
 }
 
-// Check Local AI health regularly and update sidebar dynamically
+/* ══════════════════════════════════════
+   Health Polling
+   ══════════════════════════════════════ */
+function updateHealth(d) {
+  const dot = document.getElementById('health-dot');
+  const text = document.getElementById('health-text');
+  const ollamaLabel = document.getElementById('ollama-label');
+  const ollamaStatus = document.getElementById('ollama-status');
+  const modelLabel = document.getElementById('model-label');
+  const modelStatus = document.getElementById('model-status');
+  const gridDensity = document.getElementById('grid-density');
+
+  if(d.status === 'ok') {
+    dot.className = 'health-dot ok';
+    text.textContent = t('ai_ready');
+    ollamaStatus.textContent = t('status_connected');
+    ollamaStatus.className = 'value ok';
+    if(d.ollama_version) ollamaLabel.textContent = 'Ollama v' + d.ollama_version;
+  } else {
+    dot.className = 'health-dot err';
+    text.textContent = t('ai_offline');
+    ollamaStatus.textContent = t('status_disconnected');
+    ollamaStatus.className = 'value err';
+  }
+
+  if(d.model) {
+    modelLabel.textContent = d.model;
+    modelStatus.textContent = d.status === 'ok' ? t('status_loaded') : t('status_na');
+    modelStatus.className = 'value ' + (d.status === 'ok' ? 'ok' : 'err');
+  }
+  if(d.grid_density) gridDensity.textContent = d.grid_density;
+}
+
 setInterval(() => {
-  fetch('/api/health')
-    .then(r => r.json())
-    .then(d => {
-       const dot = document.getElementById('health-dot');
-       const text = document.getElementById('health-text');
-       const ollamaLabel = document.getElementById('ollama-label');
-       const ollamaStatus = document.getElementById('ollama-status');
-       const modelLabel = document.getElementById('model-label');
-       const modelStatus = document.getElementById('model-status');
-       const gridDensity = document.getElementById('grid-density');
-
-       if(d.status === 'ok') {
-         dot.className = 'dot';
-         text.textContent = 'LOCAL AI: LISTO';
-         ollamaStatus.textContent = 'Conectado';
-         ollamaStatus.style.color = 'var(--success)';
-         if(d.ollama_version) {
-           ollamaLabel.textContent = 'Ollama v' + d.ollama_version;
-         }
-       } else {
-         dot.className = 'dot error';
-         text.textContent = 'OLLAMA: OFFLINE';
-         ollamaStatus.textContent = 'Desconectado';
-         ollamaStatus.style.color = 'var(--error)';
-       }
-
-       if(d.model) {
-         modelLabel.textContent = d.model;
-         modelStatus.textContent = d.status === 'ok' ? 'Cargado' : 'N/A';
-       }
-       if(d.grid_density) {
-         gridDensity.textContent = d.grid_density;
-       }
-    });
+  fetch('/api/health').then(r=>r.json()).then(updateHealth).catch(()=>{});
 }, 5000);
-
-// Trigger initial health check
-setTimeout(() => fetch('/api/health').then(r => r.json()).then(d => {
-  const evt = new Event('poll');
-  document.dispatchEvent(evt);
-}), 1000);
+setTimeout(() => fetch('/api/health').then(r=>r.json()).then(updateHealth).catch(()=>{}), 800);
 </script>
 </body>
 </html>`
