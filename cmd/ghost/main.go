@@ -43,16 +43,32 @@ var startCmd = &cobra.Command{
                 if len(args) > 0 {
                         mission = args[0]
                 }
-                startAgent(mission, nil)
 
-                fmt.Println("👻 GhostOperator activo. Presiona Ctrl+C para salir.")
+                ctx, cancel := context.WithCancel(context.Background())
+                defer cancel()
+
                 sigs := make(chan os.Signal, 1)
                 signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-                <-sigs
+                go func() {
+                        <-sigs
+                        fmt.Println("\n\033[1;33m[SIGNAL]\033[0m Interrupción recibida. Cancelando misión...")
+                        cancel()
+                }()
+
+                err := startAgentWithContext(ctx, mission, nil)
+                if err != nil {
+                        fmt.Printf("❌ Error en misión: %v\n", err)
+                }
+
+                fmt.Println("👻 GhostOperator finalizado.")
         },
 }
 
-func startAgent(mission string, uiLog func(string)) {
+func startAgent(mission string, uiLog func(string)) error {
+        return startAgentWithContext(context.Background(), mission, uiLog)
+}
+
+func startAgentWithContext(ctx context.Context, mission string, uiLog func(string)) error {
         cfg := config.Load()
 
         // Auto-detect weak hardware and enable fallback mode
@@ -67,7 +83,7 @@ func startAgent(mission string, uiLog func(string)) {
         client, err := llm.NewVisionClient(cfg.OllamaEndpoint, cfg.OllamaModel)
         if err != nil {
                 fmt.Printf("❌ Error conectando con Ollama: %v\n", err)
-                os.Exit(1)
+                return fmt.Errorf("Ollama connection failed: %w", err)
         }
 
         orch := &core.Orchestrator{
@@ -76,15 +92,16 @@ func startAgent(mission string, uiLog func(string)) {
                 Config:  cfg,
         }
 
-        err = orch.ProcessMission(context.Background(), mission, func(s string) {
+        err = orch.ProcessMission(ctx, mission, func(s string) {
                 fmt.Printf("\033[1;32m[MISSION]\033[0m %s\n", s)
                 if uiLog != nil {
                         uiLog(s)
                 }
         })
         if err != nil {
-                fmt.Printf("❌ Error en misión: %v\n", err)
+                return fmt.Errorf("MISSION_FAILED: %w", err)
         }
+        return nil
 }
 
 func launchGUI() {

@@ -23,7 +23,7 @@ fi
 P12_PASS="$GHOST_CODESIGN_PASS"
 
 # Use HTTPS for the timestamp server to prevent MITM attacks
-TIMESTAMP_URL="http://timestamp.digicert.com"
+TIMESTAMP_URL="https://timestamp.digicert.com"
 APP_NAME="GhostOperator - Autonomous Visual Desktop Agent"
 APP_URL="https://github.com/TheAngelNerozzi/GhostOperator"
 

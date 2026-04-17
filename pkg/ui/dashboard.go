@@ -13,7 +13,9 @@ import (
         "os/exec"
         "os/signal"
         "runtime"
+        "strings"
         "sync"
+        "sync/atomic"
         "syscall"
         "time"
 
@@ -71,7 +73,7 @@ func csrfMiddleware(next http.HandlerFunc) http.HandlerFunc {
 }
 
 // ShowDashboard launches the Ghost Mode web UI in the default browser.
-func ShowDashboard(version string, cfg *config.AppConfig, m machine.Machine, onStart func(string, func(string))) {
+func ShowDashboard(version string, cfg *config.AppConfig, m machine.Machine, onStart func(string, func(string)) error) {
         mux := http.NewServeMux()
 
         // Mutex to protect concurrent access to cfg
@@ -88,13 +90,40 @@ func ShowDashboard(version string, cfg *config.AppConfig, m machine.Machine, onS
         }
 
         // isLoopbackURL checks whether a URL points to a loopback address (SSRF protection).
+        // Uses net.IP.IsLoopback() to cover all loopback variants (127.0.0.0/8, ::1,
+        // IPv4-mapped IPv6, etc.) and resolves hostnames via DNS to prevent rebinding.
         isLoopbackURL := func(rawURL string) bool {
                 u, err := url.Parse(rawURL)
                 if err != nil {
                         return false
                 }
-                h := u.Hostname()
-                return h == "127.0.0.1" || h == "::1" || h == "localhost"
+                scheme := strings.ToLower(u.Scheme)
+                if scheme != "http" && scheme != "https" {
+                        return false
+                }
+                host := u.Hostname()
+                if host == "" {
+                        return false
+                }
+                // Reject any URL containing a path, query, or fragment to prevent injection.
+                if u.RawQuery != "" || u.Fragment != "" {
+                        return false
+                }
+                ip := net.ParseIP(host)
+                if ip != nil {
+                        return ip.IsLoopback()
+                }
+                // For hostnames, resolve and check all addresses
+                addrs, err := net.LookupIP(host)
+                if err != nil {
+                        return false
+                }
+                for _, addr := range addrs {
+                        if !addr.IsLoopback() {
+                                return false
+                        }
+                }
+                return true
         }
 
         // Serve the main dashboard page
@@ -108,8 +137,11 @@ func ShowDashboard(version string, cfg *config.AppConfig, m machine.Machine, onS
                         SameSite: http.SameSiteStrictMode,
                 })
                 w.Header().Set("Content-Type", "text/html; charset=utf-8")
-                fmt.Fprintf(w, dashboardHTML, version, version, csrfToken, version)
+                fmt.Fprintf(w, dashboardHTML, version, version, version, csrfToken)
         })
+
+        // missionActive tracks whether a mission is currently running to prevent concurrent execution.
+        var missionActive int32
 
         // Mission execution endpoint (streams Server-Sent Events)
         mux.HandleFunc("/mission", csrfMiddleware(func(w http.ResponseWriter, r *http.Request) {
@@ -117,11 +149,31 @@ func ShowDashboard(version string, cfg *config.AppConfig, m machine.Machine, onS
                         http.Error(w, "Method Not Allowed", 405)
                         return
                 }
+
+                // Limit request body to 1MB to prevent memory exhaustion
+                r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+
                 mission := r.FormValue("intent")
                 if mission == "" {
                         http.Error(w, "No intent provided", 400)
                         return
                 }
+
+                // Prevent concurrent mission execution
+                if !atomic.CompareAndSwapInt32(&missionActive, 0, 1) {
+                        http.Error(w, "Mission already in progress", http.StatusConflict)
+                        return
+                }
+                defer atomic.StoreInt32(&missionActive, 0)
+
+                ctx, cancel := context.WithCancel(r.Context())
+                defer cancel()
+
+                // Monitor client disconnect to stop mission
+                go func() {
+                        <-ctx.Done()
+                        cancel()
+                }()
 
                 w.Header().Set("Content-Type", "text/event-stream")
                 w.Header().Set("Cache-Control", "no-cache")
@@ -132,17 +184,26 @@ func ShowDashboard(version string, cfg *config.AppConfig, m machine.Machine, onS
                         return
                 }
 
-                onStart(mission, func(status string) {
+                err := onStart(mission, func(status string) {
                         defer func() {
                                 if r := recover(); r != nil {
                                         fmt.Printf("Warning: panic in mission callback: %v\n", r)
                                 }
                         }()
+                        select {
+                        case <-ctx.Done():
+                                return
+                        default:
+                        }
                         fmt.Fprintf(w, "data: %s\n\n", status)
                         flusher.Flush()
                 })
 
-                fmt.Fprintf(w, "data: ✅ Misión completada.\n\n")
+                if err != nil {
+                        fmt.Fprintf(w, "data: ❌ Misión fallida: %v\n\n", err)
+                } else {
+                        fmt.Fprintf(w, "data: ✅ Misión completada.\n\n")
+                }
                 flusher.Flush()
         }))
 
@@ -248,12 +309,20 @@ func ShowDashboard(version string, cfg *config.AppConfig, m machine.Machine, onS
                         cmd = exec.Command("xdg-open", addr)
                 }
                 if cmd != nil {
-                        cmd.Start()
+                        if err := cmd.Start(); err != nil {
+                                fmt.Printf("Warning: could not open browser: %v\n", err)
+                        }
                 }
         }()
 
         // Graceful shutdown with signal handling
-        srv := &http.Server{Handler: mux}
+        srv := &http.Server{
+                Handler:        mux,
+                ReadTimeout:    10 * time.Second,
+                WriteTimeout:   30 * time.Second,
+                IdleTimeout:    60 * time.Second,
+                MaxHeaderBytes: 1 << 20,
+        }
         go func() {
                 if err := srv.Serve(listener); err != nil && err != http.ErrServerClosed {
                         fmt.Println("❌ UI server error:", err)
@@ -372,7 +441,7 @@ header{
   cursor:pointer;
   outline:none;
   transition:border-color var(--transition);
-  background-image:url("data:image/svg+xml,%%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='none'%%3E%%3Cpath d='M1 1l4 4 4-4' stroke='%%2371717a' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%%3C/svg%%3E");
+  background-image:url("data:image/svg+xml,%%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='none'%%3E%%3Cpath d='M1 1l4 4 4-4' stroke='%%2371717a' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%%3E%%3C/svg%%3E");
   background-repeat:no-repeat;
   background-position:right 8px center;
 }

@@ -1,7 +1,7 @@
 # GhostOperator - Setup Interactivo v2.0
 # Ejecuta este script la primera vez que clones el proyecto.
 
-$ErrorActionPreference = "SilentlyContinue"
+$ErrorActionPreference = "Stop"
 
 Write-Host ""
 Write-Host "  ██████  ████████  ██████  ███████ ████████" -ForegroundColor White
