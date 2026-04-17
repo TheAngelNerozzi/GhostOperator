@@ -1,0 +1,217 @@
+# ═══════════════════════════════════════════════════════════════
+# Webhook Auto-Update Pipeline
+# Triggers on every push to main, builds all binaries,
+# generates SHA256 checksums, and publishes a latest.json
+# manifest + binaries as a GitHub Release tagged "latest".
+# ═══════════════════════════════════════════════════════════════
+name: "Auto-Update Webhook"
+
+on:
+  push:
+    branches: ["main"]
+    paths-ignore:
+      - "**.md"
+      - "LICENSE"
+      - ".gitignore"
+      - "docs/**"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  APP_NAME: "ghost"
+
+jobs:
+  # ── Step 1: Build all platform binaries ──
+  build-all:
+    name: Build All Platforms
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache: true
+
+      - name: Extract Version
+        id: version
+        run: |
+          # Extract version from main.go (format: const version = "X.Y.Z")
+          VERSION=$(grep -oP 'const version = "\K[^"]+' cmd/ghost/main.go || echo "0.0.0-unknown")
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          echo "Build version: ${VERSION} (commit: ${GITHUB_SHA::7})"
+
+      - name: Build Windows AMD64
+        run: GOOS=windows GOARCH=amd64 go build -ldflags "-s -w" -o ./release/ghost-windows-amd64.exe ./cmd/ghost
+
+      - name: Build Linux AMD64
+        run: GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ./release/ghost-linux-amd64 ./cmd/ghost
+
+      - name: Build macOS AMD64
+        run: GOOS=darwin GOARCH=amd64 go build -ldflags "-s -w" -o ./release/ghost-darwin-amd64 ./cmd/ghost
+
+      - name: Build macOS ARM64
+        run: GOOS=darwin GOARCH=arm64 go build -ldflags "-s -w" -o ./release/ghost-darwin-arm64 ./cmd/ghost
+
+      - name: Compute Checksums
+        id: checksums
+        run: |
+          cd ./release
+          echo "## SHA256 Checksums" > ../CHECKSUMS.txt
+          echo "" >> ../CHECKSUMS.txt
+          for file in *; do
+            if [ -f "$file" ]; then
+              SHA=$(sha256sum "$file" | awk '{print $1}')
+              echo "${SHA}  ${file}" >> ../CHECKSUMS.txt
+              echo "checksum_${file}=${SHA}" >> "$GITHUB_OUTPUT"
+              SIZE=$(stat -c%s "$file")
+              echo "size_${file}=${SIZE}" >> "$GITHUB_OUTPUT"
+            fi
+          done
+          cat ../CHECKSUMS.txt
+
+      - name: Generate latest.json Manifest
+        env:
+          VER: ${{ steps.version.outputs.version }}
+          SHA: ${{ steps.version.outputs.short_sha }}
+          WIN_SHA: ${{ steps.checksums.outputs.checksum_ghost-windows-amd64.exe }}
+          LIN_SHA: ${{ steps.checksums.outputs.checksum_ghost-linux-amd64 }}
+          MAC_SHA: ${{ steps.checksums.outputs.checksum_ghost-darwin-amd64 }}
+          ARM_SHA: ${{ steps.checksums.outputs.checksum_ghost-darwin-arm64 }}
+          WIN_SZ: ${{ steps.checksums.outputs.size_ghost-windows-amd64.exe }}
+          LIN_SZ: ${{ steps.checksums.outputs.size_ghost-linux-amd64 }}
+          MAC_SZ: ${{ steps.checksums.outputs.size_ghost-darwin-amd64 }}
+          ARM_SZ: ${{ steps.checksums.outputs.size_ghost-darwin-arm64 }}
+        run: |
+          cat > ./release/latest.json << 'MANIFEST_EOF'
+          {
+            "version": "PLACEHOLDER_VER",
+            "commit": "PLACEHOLDER_SHA",
+            "build_time": "PLACEHOLDER_TIME",
+            "channel": "stable",
+            "published_at": "PLACEHOLDER_PUBLISHED",
+            "min_version": "1.4.0",
+            "mandatory": false,
+            "changelog": "Auto-update from main branch build",
+            "assets": {
+              "ghost-windows-amd64.exe": {
+                "url": "https://github.com/TheAngelNerozzi/GhostOperator/releases/download/latest/ghost-windows-amd64.exe",
+                "sha256": "PLACEHOLDER_WIN_SHA",
+                "size": PLACEHOLDER_WIN_SZ,
+                "platform": "windows-amd64"
+              },
+              "ghost-linux-amd64": {
+                "url": "https://github.com/TheAngelNerozzi/GhostOperator/releases/download/latest/ghost-linux-amd64",
+                "sha256": "PLACEHOLDER_LIN_SHA",
+                "size": PLACEHOLDER_LIN_SZ,
+                "platform": "linux-amd64"
+              },
+              "ghost-darwin-amd64": {
+                "url": "https://github.com/TheAngelNerozzi/GhostOperator/releases/download/latest/ghost-darwin-amd64",
+                "sha256": "PLACEHOLDER_MAC_SHA",
+                "size": PLACEHOLDER_MAC_SZ,
+                "platform": "darwin-amd64"
+              },
+              "ghost-darwin-arm64": {
+                "url": "https://github.com/TheAngelNerozzi/GhostOperator/releases/download/latest/ghost-darwin-arm64",
+                "sha256": "PLACEHOLDER_ARM_SHA",
+                "size": PLACEHOLDER_ARM_SZ,
+                "platform": "darwin-arm64"
+              }
+            }
+          }
+          MANIFEST_EOF
+
+          # Use sed for reliable in-place substitution
+          NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          PUBLISHED=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          sed -i "s|PLACEHOLDER_VER|${VER}|g" ./release/latest.json
+          sed -i "s|PLACEHOLDER_SHA|${SHA}|g" ./release/latest.json
+          sed -i "s|PLACEHOLDER_TIME|${NOW}|g" ./release/latest.json
+          sed -i "s|PLACEHOLDER_PUBLISHED|${PUBLISHED}|g" ./release/latest.json
+          sed -i "s|PLACEHOLDER_WIN_SHA|${WIN_SHA}|g" ./release/latest.json
+          sed -i "s|PLACEHOLDER_LIN_SHA|${LIN_SHA}|g" ./release/latest.json
+          sed -i "s|PLACEHOLDER_MAC_SHA|${MAC_SHA}|g" ./release/latest.json
+          sed -i "s|PLACEHOLDER_ARM_SHA|${ARM_SHA}|g" ./release/latest.json
+          sed -i "s|PLACEHOLDER_WIN_SZ|${WIN_SZ}|g" ./release/latest.json
+          sed -i "s|PLACEHOLDER_LIN_SZ|${LIN_SZ}|g" ./release/latest.json
+          sed -i "s|PLACEHOLDER_MAC_SZ|${MAC_SZ}|g" ./release/latest.json
+          sed -i "s|PLACEHOLDER_ARM_SZ|${ARM_SZ}|g" ./release/latest.json
+
+          echo "=== Generated latest.json ==="
+          cat ./release/latest.json | python3 -m json.tool
+
+      - name: Upload Release Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-binaries
+          path: ./release/*
+
+  # ── Step 2: Publish as GitHub Release ──
+  publish-latest:
+    name: Publish Latest Release
+    needs: build-all
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Download Release Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-binaries
+          path: ./release
+
+      - name: Delete Existing "latest" Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Delete the existing "latest" release and tag if they exist
+          gh release delete latest --yes --cleanup-tag 2>/dev/null || true
+          git push origin :refs/tags/latest 2>/dev/null || true
+          echo "Existing 'latest' release cleaned up."
+
+      - name: Create "latest" Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Extract version from manifest
+          VERSION=$(python3 -c "import json; print(json.load(open('./release/latest.json'))['version'])")
+          COMMIT=$(python3 -c "import json; print(json.load(open('./release/latest.json'))['commit'])")
+          BUILD_TIME=$(python3 -c "import json; print(json.load(open('./release/latest.json'))['build_time'])")
+
+          # Create tag and release
+          git tag -f latest
+          git push -f origin latest
+
+          gh release create latest \
+            --title "GhostOperator v${VERSION} (build ${COMMIT})" \
+            --notes "Auto-generated build from main branch.
+
+          - **Version**: ${VERSION}
+          - **Commit**: ${COMMIT}
+          - **Build Time**: ${BUILD_TIME}
+          - **Channel**: stable
+
+          This is a rolling release. It is automatically updated on every push to main." \
+            --prerelease \
+            ./release/*
+
+          echo "=== Release 'latest' published successfully ==="
+
+      - name: Verify Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "=== Verifying published release ==="
+          gh release view latest --json tagName,name,assets --jq '{tag: .tagName, name: .name, assets: [.assets[].name]}'
+          echo ""
+          echo "=== Verifying latest.json is downloadable ==="
+          curl -sL https://github.com/TheAngelNerozzi/GhostOperator/releases/download/latest/latest.json | python3 -m json.tool | head -5
+          echo "..."
+          echo "=== Webhook pipeline complete ==="

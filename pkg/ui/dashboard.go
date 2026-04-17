@@ -21,6 +21,7 @@ import (
 
         "github.com/TheAngelNerozzi/ghostoperator/internal/core"
         "github.com/TheAngelNerozzi/ghostoperator/internal/machine"
+        "github.com/TheAngelNerozzi/ghostoperator/internal/updater"
         "github.com/TheAngelNerozzi/ghostoperator/pkg/config"
 )
 
@@ -137,7 +138,7 @@ func ShowDashboard(version string, cfg *config.AppConfig, m machine.Machine, onS
                         SameSite: http.SameSiteStrictMode,
                 })
                 w.Header().Set("Content-Type", "text/html; charset=utf-8")
-                fmt.Fprintf(w, dashboardHTML, version, version, version, csrfToken)
+                fmt.Fprintf(w, dashboardHTML, version, version, version, version, version, csrfToken)
         })
 
         // missionActive tracks whether a mission is currently running to prevent concurrent execution.
@@ -296,6 +297,110 @@ func ShowDashboard(version string, cfg *config.AppConfig, m machine.Machine, onS
                 }
                 writeJSON(w, map[string]interface{}{"fallback_active": cfg.HardwareFallback, "budget_ms": cfg.FallbackBudgetMs})
         }))
+
+        // ── Auto-Update Endpoints ──
+
+        // Initialize the updater engine
+        updateCfg := updater.DefaultConfig(version)
+        updateCfg.AutoUpdate = cfg.AutoUpdateInstall
+        updateCfg.Channel = cfg.UpdateChannel
+        updateCfg.CheckInterval = time.Duration(cfg.UpdateCheckMinutes) * time.Minute
+        updateEngine := updater.New(updateCfg)
+
+        // Check for updates (GET)
+        mux.HandleFunc("/api/update/check", func(w http.ResponseWriter, r *http.Request) {
+                if r.Method != http.MethodGet {
+                        http.Error(w, "Method Not Allowed", 405)
+                        return
+                }
+                if updateEngine == nil {
+                        writeJSON(w, map[string]string{"error": "updater disabled"})
+                        return
+                }
+                ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+                defer cancel()
+                status := updateEngine.CheckForUpdates(ctx)
+                writeJSON(w, status)
+        })
+
+        // Apply update (POST)
+        mux.HandleFunc("/api/update/apply", csrfMiddleware(func(w http.ResponseWriter, r *http.Request) {
+                if r.Method != http.MethodPost {
+                        http.Error(w, "Method Not Allowed", 405)
+                        return
+                }
+                if updateEngine == nil {
+                        writeJSON(w, map[string]string{"error": "updater disabled"})
+                        return
+                }
+                ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
+                defer cancel()
+                result := updateEngine.DownloadAndUpdate(ctx)
+                writeJSON(w, result)
+        }))
+
+        // Toggle auto-update settings (POST)
+        mux.HandleFunc("/api/update/config", csrfMiddleware(func(w http.ResponseWriter, r *http.Request) {
+                if r.Method != http.MethodPost {
+                        http.Error(w, "Method Not Allowed", 405)
+                        return
+                }
+                r.Body = http.MaxBytesReader(w, r.Body, 1<<10) // 1KB limit
+                var req struct {
+                        Enabled *bool   `json:"enabled"`
+                        AutoInstall *bool `json:"auto_install"`
+                        Channel *string `json:"channel"`
+                }
+                if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+                        http.Error(w, "Invalid JSON", 400)
+                        return
+                }
+                cfgMu.Lock()
+                if req.Enabled != nil {
+                        cfg.AutoUpdateEnabled = *req.Enabled
+                }
+                if req.AutoInstall != nil {
+                        cfg.AutoUpdateInstall = *req.AutoInstall
+                }
+                if req.Channel != nil && (*req.Channel == "stable" || *req.Channel == "beta") {
+                        cfg.UpdateChannel = *req.Channel
+                }
+                cfgMu.Unlock()
+                if err := cfg.Save(); err != nil {
+                        http.Error(w, fmt.Sprintf("Failed to save config: %v", err), 500)
+                        return
+                }
+                cfgMu.RLock()
+                writeJSON(w, map[string]interface{}{
+                        "auto_update_enabled":  cfg.AutoUpdateEnabled,
+                        "auto_update_install":  cfg.AutoUpdateInstall,
+                        "update_channel":       cfg.UpdateChannel,
+                        "update_check_minutes": cfg.UpdateCheckMinutes,
+                })
+                cfgMu.RUnlock()
+        }))
+
+        // Background update checker (runs periodically)
+        if cfg.AutoUpdateEnabled && updateEngine != nil {
+                go func() {
+                        // Initial check after 10 seconds
+                        time.Sleep(10 * time.Second)
+                        ticker := time.NewTicker(updateCfg.CheckInterval)
+                        defer ticker.Stop()
+                        for {
+                                ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+                                status := updateEngine.CheckForUpdates(ctx)
+                                cancel()
+                                if status.Available {
+                                        fmt.Printf("\033[1;36m[UPDATE]\033[0m Nueva version disponible: v%s\n", status.LatestVer)
+                                        if status.Mandatory {
+                                                fmt.Println("\033[1;33m[UPDATE]\033[0m Actualizacion obligatoria detectada.")
+                                        }
+                                }
+                                <-ticker.C
+                        }
+                }()
+        }
 
         // Resume mission after interruption
         mux.HandleFunc("/api/resume", csrfMiddleware(func(w http.ResponseWriter, r *http.Request) {
@@ -522,6 +627,34 @@ aside{
 .info-row .value.ok{color:var(--text-secondary)}
 .info-row .value.err{color:var(--text-dim)}
 
+/* ── UPDATE SECTION ── */
+.update-card{position:relative;overflow:hidden}
+.update-badge{
+  position:absolute;top:10px;right:10px;
+  background:var(--text);color:var(--bg);
+  font-size:8px;font-weight:700;letter-spacing:.1em;
+  padding:2px 6px;border-radius:3px;text-transform:uppercase;
+}
+.update-btn{
+  margin-top:4px;
+  width:100%%;
+  background:transparent;
+  color:var(--text);
+  border:1px solid var(--border-light);
+  padding:8px 0;
+  border-radius:var(--radius-sm);
+  font-family:var(--sans);
+  font-size:10px;
+  font-weight:600;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  cursor:pointer;
+  transition:all var(--transition);
+}
+.update-btn:hover{background:var(--surface2);border-color:var(--text-secondary)}
+.update-btn:active{opacity:.7}
+.update-btn:disabled{opacity:.4;cursor:not-allowed}
+
 /* ── CONSOLE ── */
 .console{
   display:flex;
@@ -735,6 +868,37 @@ aside{
           <span class="label" data-i18n="lbl_hotkey">Hotkey</span>
           <span class="value">Alt+G</span>
         </div>
+        <div class="info-row">
+          <span class="label" data-i18n="lbl_version">Version</span>
+          <span class="value" id="current-version">v%s</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Update Notification -->
+    <div class="sidebar-group" id="update-section" style="display:none">
+      <div class="sidebar-label" data-i18n="sec_update">Update</div>
+      <div class="info-card update-card">
+        <div class="update-badge" id="update-badge">NEW</div>
+        <div class="info-row">
+          <span class="label" data-i18n="lbl_latest">Latest</span>
+          <span class="value" id="latest-version">...</span>
+        </div>
+        <div class="info-row">
+          <span class="label" data-i18n="lbl_size">Size</span>
+          <span class="value" id="update-size">...</span>
+        </div>
+        <button class="update-btn" id="update-btn" onclick="applyUpdate()" data-i18n="btn_update">Update Now</button>
+      </div>
+    </div>
+
+    <div class="sidebar-group" id="update-ok-section">
+      <div class="sidebar-label" data-i18n="sec_update">Update</div>
+      <div class="info-card">
+        <div class="info-row">
+          <span class="label" data-i18n="lbl_status">Status</span>
+          <span class="value ok" id="update-status-text" data-i18n="upd_checking">Checking...</span>
+        </div>
       </div>
     </div>
   </aside>
@@ -781,7 +945,24 @@ const i18n = {
     status_connected: "Connected",
     status_disconnected: "Disconnected",
     status_loaded: "Loaded",
-    status_na: "N/A"
+    status_na: "N/A",
+    sec_update: "Update",
+    lbl_version: "Version",
+    lbl_latest: "Latest",
+    lbl_size: "Size",
+    lbl_status: "Status",
+    btn_update: "Update Now",
+    upd_checking: "Checking...",
+    upd_uptodate: "Up to date",
+    upd_available: "Update available!",
+    upd_downloading: "Downloading...",
+    upd_installing: "Installing...",
+    upd_restart: "Restarting...",
+    upd_error: "Update error",
+    upd_mandatory: "Mandatory update",
+    modal_upd_title: "UPDATE AVAILABLE",
+    modal_upd_desc: "A new version is available. Download and install?",
+    modal_upd_btn: "Install Update"
   },
   es: {
     ai_checking: "Verificando IA...",
@@ -806,7 +987,24 @@ const i18n = {
     status_connected: "Conectado",
     status_disconnected: "Desconectado",
     status_loaded: "Cargado",
-    status_na: "N/A"
+    status_na: "N/A",
+    sec_update: "Actualizacion",
+    lbl_version: "Version",
+    lbl_latest: "Ultima",
+    lbl_size: "Tamano",
+    lbl_status: "Estado",
+    btn_update: "Actualizar Ahora",
+    upd_checking: "Verificando...",
+    upd_uptodate: "Actualizado",
+    upd_available: "Actualizacion disponible!",
+    upd_downloading: "Descargando...",
+    upd_installing: "Instalando...",
+    upd_restart: "Reiniciando...",
+    upd_error: "Error de actualizacion",
+    upd_mandatory: "Actualizacion obligatoria",
+    modal_upd_title: "ACTUALIZACION DISPONIBLE",
+    modal_upd_desc: "Una nueva version esta disponible. Descargar e instalar?",
+    modal_upd_btn: "Instalar Actualizacion"
   },
   fr: {
     ai_checking: "Verification IA...",
@@ -831,7 +1029,24 @@ const i18n = {
     status_connected: "Connecte",
     status_disconnected: "Deconnecte",
     status_loaded: "Charge",
-    status_na: "N/A"
+    status_na: "N/A",
+    sec_update: "Mise a jour",
+    lbl_version: "Version",
+    lbl_latest: "Derniere",
+    lbl_size: "Taille",
+    lbl_status: "Statut",
+    btn_update: "Mettre a jour",
+    upd_checking: "Verification...",
+    upd_uptodate: "A jour",
+    upd_available: "Mise a jour disponible!",
+    upd_downloading: "Telechargement...",
+    upd_installing: "Installation...",
+    upd_restart: "Redemarrage...",
+    upd_error: "Erreur de mise a jour",
+    upd_mandatory: "Mise a jour obligatoire",
+    modal_upd_title: "MISE A JOUR DISPONIBLE",
+    modal_upd_desc: "Une nouvelle version est disponible. Telecharger et installer?",
+    modal_upd_btn: "Installer"
   },
   zh: {
     ai_checking: "正在检查 AI...",
@@ -856,7 +1071,24 @@ const i18n = {
     status_connected: "已连接",
     status_disconnected: "已断开",
     status_loaded: "已加载",
-    status_na: "N/A"
+    status_na: "N/A",
+    sec_update: "更新",
+    lbl_version: "版本",
+    lbl_latest: "最新",
+    lbl_size: "大小",
+    lbl_status: "状态",
+    btn_update: "立即更新",
+    upd_checking: "检查中...",
+    upd_uptodate: "已是最新",
+    upd_available: "有新版本可用!",
+    upd_downloading: "下载中...",
+    upd_installing: "安装中...",
+    upd_restart: "重启中...",
+    upd_error: "更新错误",
+    upd_mandatory: "强制更新",
+    modal_upd_title: "发现新版本",
+    modal_upd_desc: "有新版本可用。是否下载安装?",
+    modal_upd_btn: "安装更新"
   }
 };
 
@@ -988,6 +1220,95 @@ setInterval(() => {
   fetch('/api/health').then(r=>r.json()).then(updateHealth).catch(()=>{});
 }, 5000);
 setTimeout(() => fetch('/api/health').then(r=>r.json()).then(updateHealth).catch(()=>{}), 800);
+
+/* ══════════════════════════════════════
+   Auto-Update System
+   ══════════════════════════════════════ */
+const currentVersion = 'v%s';
+let updateAvailable = false;
+let isUpdating = false;
+
+function formatBytes(bytes) {
+  if (!bytes || bytes <= 0) return 'N/A';
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + ' KB';
+  return (bytes/(1024*1024)).toFixed(1) + ' MB';
+}
+
+function checkForUpdates() {
+  fetch('/api/update/check')
+    .then(r => r.json())
+    .then(d => {
+      const statusEl = document.getElementById('update-status-text');
+      const updateSection = document.getElementById('update-section');
+      const okSection = document.getElementById('update-ok-section');
+
+      if (d.error) {
+        statusEl.textContent = t('upd_error');
+        statusEl.className = 'value err';
+        return;
+      }
+
+      if (d.available) {
+        updateAvailable = true;
+        updateSection.style.display = 'flex';
+        okSection.style.display = 'none';
+        document.getElementById('latest-version').textContent = 'v' + d.latest_version;
+        document.getElementById('update-size').textContent = formatBytes(d.download_size);
+
+        if (d.mandatory) {
+          document.getElementById('update-badge').textContent = t('upd_mandatory');
+          document.getElementById('update-badge').style.background = '#71717a';
+        }
+      } else {
+        updateAvailable = false;
+        updateSection.style.display = 'none';
+        okSection.style.display = 'flex';
+        statusEl.textContent = t('upd_uptodate');
+        statusEl.className = 'value ok';
+      }
+    })
+    .catch(() => {
+      document.getElementById('update-status-text').textContent = t('upd_error');
+    });
+}
+
+function applyUpdate() {
+  if (isUpdating) return;
+  isUpdating = true;
+  const btn = document.getElementById('update-btn');
+  const originalText = btn.textContent;
+  btn.textContent = t('upd_downloading');
+  btn.disabled = true;
+
+  fetch('/api/update/apply', {
+    method: 'POST',
+    headers: {'X-CSRF-Token': csrfToken}
+  })
+    .then(r => r.json())
+    .then(d => {
+      if (d.success) {
+        btn.textContent = t('upd_restart');
+        appendLog('[UPDATE] ' + t('upd_installing') + ' v' + d.version, 'res');
+        setTimeout(() => { location.reload(); }, 3000);
+      } else {
+        btn.textContent = originalText;
+        btn.disabled = false;
+        isUpdating = false;
+        appendLog('[UPDATE] ' + (d.error || 'Unknown error'), 'err');
+      }
+    })
+    .catch(e => {
+      btn.textContent = originalText;
+      btn.disabled = false;
+      isUpdating = false;
+      appendLog('[UPDATE] ' + t('upd_error') + ': ' + e.message, 'err');
+    });
+}
+
+// Check for updates on load, then every 5 minutes
+setTimeout(checkForUpdates, 2000);
+setInterval(checkForUpdates, 5 * 60 * 1000);
 </script>
 </body>
 </html>`

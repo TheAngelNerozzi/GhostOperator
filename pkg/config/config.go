@@ -23,6 +23,12 @@ type AppConfig struct {
         FallbackAutoDetect  bool   `json:"fallback_auto_detect"`
         FallbackBudgetMs    int    `json:"fallback_budget_ms"`
         Theme               string `json:"theme"`
+
+        // Auto-update settings
+        AutoUpdateEnabled  bool   `json:"auto_update_enabled"`  // Enable auto-update checks
+        AutoUpdateInstall  bool   `json:"auto_update_install"`  // Auto-install without confirmation
+        UpdateChannel      string `json:"update_channel"`       // "stable" or "beta"
+        UpdateCheckMinutes int    `json:"update_check_minutes"`  // Check interval in minutes
 }
 
 // getConfigPath returns the full path to the config file, using the
@@ -55,6 +61,12 @@ func Load() *AppConfig {
                 FallbackAutoDetect:  true,
                 FallbackBudgetMs:    15000,
                 Theme:               "dark",
+
+                // Auto-update defaults
+                AutoUpdateEnabled:  true,
+                AutoUpdateInstall:  false,
+                UpdateChannel:      "stable",
+                UpdateCheckMinutes: 5,
         }
 
         configPath := getConfigPath()
@@ -98,6 +110,12 @@ func (c *AppConfig) validate() {
                 if n, _ := fmt.Sscanf(c.GridDensity, "%dx%d", &rows, &cols); n != 2 || rows < 1 || cols < 1 || rows > maxGridDimension || cols > maxGridDimension {
                         c.GridDensity = "20x20"
                 }
+        }
+        if c.UpdateChannel != "stable" && c.UpdateChannel != "beta" {
+                c.UpdateChannel = "stable"
+        }
+        if c.UpdateCheckMinutes < 1 {
+                c.UpdateCheckMinutes = 5
         }
 }
 
