@@ -159,27 +159,37 @@ func ShowDashboard(version string, cfg *config.AppConfig, m machine.Machine, onS
                         return
                 }
 
+                // Set up SSE streaming early so we can send pre-flight status messages
+                w.Header().Set("Content-Type", "text/event-stream")
+                w.Header().Set("Cache-Control", "no-cache")
+                w.Header().Set("Connection", "keep-alive")
+                flusher, ok := w.(http.Flusher)
+                if !ok {
+                        http.Error(w, "Streaming not supported", 500)
+                        return
+                }
+
                 // Pre-flight check: verify Ollama is reachable before starting mission
                 cfgMu.RLock()
                 ollamaEndpoint := cfg.OllamaEndpoint
                 cfgMu.RUnlock()
-                
+
                 ollamaCheckClient := http.Client{Timeout: 3 * time.Second}
                 if !isLoopbackURL(ollamaEndpoint) {
-                        fmt.Fprintf(w, "data: ❌ Ollama endpoint is not a loopback address\n\n")
+                        fmt.Fprintf(w, "data: Ollama endpoint is not a loopback address\n\n")
                         flusher.Flush()
                         return
                 }
                 checkResp, checkErr := ollamaCheckClient.Get(ollamaEndpoint + "/api/version")
                 if checkErr != nil {
-                        fmt.Fprintf(w, "data: ❌ Ollama no está corriendo. Intentando iniciar...\n\n")
+                        fmt.Fprintf(w, "data: Ollama no esta corriendo. Intentando iniciar...\n\n")
                         flusher.Flush()
                         if !core.EnsureOllamaRunning() {
-                                fmt.Fprintf(w, "data: ❌ No se pudo iniciar Ollama. Descárgalo desde https://ollama.com/download e instálalo.\n\n")
+                                fmt.Fprintf(w, "data: No se pudo iniciar Ollama. Descargalo desde https://ollama.com/download\n\n")
                                 flusher.Flush()
                                 return
                         }
-                        fmt.Fprintf(w, "data: ✅ Ollama iniciado correctamente.\n\n")
+                        fmt.Fprintf(w, "data: Ollama iniciado correctamente.\n\n")
                         flusher.Flush()
                 } else {
                         checkResp.Body.Close()
@@ -200,15 +210,6 @@ func ShowDashboard(version string, cfg *config.AppConfig, m machine.Machine, onS
                         <-ctx.Done()
                         cancel()
                 }()
-
-                w.Header().Set("Content-Type", "text/event-stream")
-                w.Header().Set("Cache-Control", "no-cache")
-                w.Header().Set("Connection", "keep-alive")
-                flusher, ok := w.(http.Flusher)
-                if !ok {
-                        http.Error(w, "Streaming not supported", 500)
-                        return
-                }
 
                 err := onStart(mission, func(status string) {
                         defer func() {
