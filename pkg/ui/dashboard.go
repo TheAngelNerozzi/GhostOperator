@@ -87,13 +87,14 @@ func ShowDashboard(version string, cfg *config.AppConfig, m machine.Machine, onS
                 }
         }
 
-        // validateOllamaEndpoint ensures the endpoint is a loopback address to prevent SSRF.
-        validateOllamaEndpoint := func() bool {
-                u, err := url.Parse(cfg.OllamaEndpoint)
+        // isLoopbackURL checks whether a URL points to a loopback address (SSRF protection).
+        isLoopbackURL := func(rawURL string) bool {
+                u, err := url.Parse(rawURL)
                 if err != nil {
                         return false
                 }
-                return u.IsLoopback()
+                h := u.Hostname()
+                return h == "127.0.0.1" || h == "::1" || h == "localhost"
         }
 
         // Serve the main dashboard page
@@ -161,8 +162,7 @@ func ShowDashboard(version string, cfg *config.AppConfig, m machine.Machine, onS
                 cfgMu.RUnlock()
 
                 // SSRF protection: only allow loopback addresses
-                u, err := url.Parse(endpoint)
-                if err != nil || !u.IsLoopback() {
+                if !isLoopbackURL(endpoint) {
                         writeJSON(w, map[string]string{"status": "error", "model": model, "grid_density": gridDensity})
                         return
                 }
