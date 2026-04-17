@@ -2,14 +2,14 @@
         "FixedFileInfo": {
                 "FileVersion": {
                         "Major": 1,
-                        "Minor": 3,
-                        "Patch": 1,
+                        "Minor": 4,
+                        "Patch": 0,
                         "Build": 0
                 },
                 "ProductVersion": {
                         "Major": 1,
-                        "Minor": 3,
-                        "Patch": 1,
+                        "Minor": 4,
+                        "Patch": 0,
                         "Build": 0
                 },
                 "FileFlagsMask": "3f",
@@ -22,13 +22,13 @@
                 "Comments": "GhostOperator (GO) - Autonomous Visual Desktop Agent. Open source project by Angel Nerozzi.",
                 "CompanyName": "Angel Nerozzi",
                 "FileDescription": "GhostOperator - Autonomous Visual Desktop Agent",
-                "FileVersion": "v1.3.1",
+                "FileVersion": "v1.4.0",
                 "InternalName": "ghost",
                 "LegalCopyright": "\u00a9 2025-2026 Angel Nerozzi. All rights reserved.",
                 "LegalTrademarks": "PhantomPulse, Ghost Glide, Grid Vision System",
                 "OriginalFilename": "ghost.exe",
                 "ProductName": "GhostOperator",
-                "ProductVersion": "v1.3.1"
+                "ProductVersion": "v1.4.0"
         },
         "VarFileInfo": {
                 "Translation": {

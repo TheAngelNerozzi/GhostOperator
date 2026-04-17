@@ -159,6 +159,32 @@ func ShowDashboard(version string, cfg *config.AppConfig, m machine.Machine, onS
                         return
                 }
 
+                // Pre-flight check: verify Ollama is reachable before starting mission
+                cfgMu.RLock()
+                ollamaEndpoint := cfg.OllamaEndpoint
+                cfgMu.RUnlock()
+                
+                ollamaCheckClient := http.Client{Timeout: 3 * time.Second}
+                if !isLoopbackURL(ollamaEndpoint) {
+                        fmt.Fprintf(w, "data: ❌ Ollama endpoint is not a loopback address\n\n")
+                        flusher.Flush()
+                        return
+                }
+                checkResp, checkErr := ollamaCheckClient.Get(ollamaEndpoint + "/api/version")
+                if checkErr != nil {
+                        fmt.Fprintf(w, "data: ❌ Ollama no está corriendo. Intentando iniciar...\n\n")
+                        flusher.Flush()
+                        if !core.EnsureOllamaRunning() {
+                                fmt.Fprintf(w, "data: ❌ No se pudo iniciar Ollama. Descárgalo desde https://ollama.com/download e instálalo.\n\n")
+                                flusher.Flush()
+                                return
+                        }
+                        fmt.Fprintf(w, "data: ✅ Ollama iniciado correctamente.\n\n")
+                        flusher.Flush()
+                } else {
+                        checkResp.Body.Close()
+                }
+
                 // Prevent concurrent mission execution
                 if !atomic.CompareAndSwapInt32(&missionActive, 0, 1) {
                         http.Error(w, "Mission already in progress", http.StatusConflict)

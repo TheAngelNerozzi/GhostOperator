@@ -16,7 +16,7 @@ import (
         "github.com/spf13/cobra"
 )
 
-const version = "1.3.1"
+const version = "1.4.0"
 
 var m machine.Machine = machine.NewNativeMachine()
 
@@ -70,6 +70,28 @@ func startAgent(mission string, uiLog func(string)) error {
 
 func startAgentWithContext(ctx context.Context, mission string, uiLog func(string)) error {
         cfg := config.Load()
+
+        // Always verify Ollama is reachable before starting any mission
+        if !core.CheckOllamaReady(cfg.OllamaEndpoint) {
+                if !core.EnsureOllamaRunning() {
+                        fmt.Println()
+                        fmt.Println("  ╔══════════════════════════════════════════════════════════╗")
+                        fmt.Println("  ║  ❌  OLLAMA NO DISPONIBLE                              ║")
+                        fmt.Println("  ╠══════════════════════════════════════════════════════════╣")
+                        fmt.Println("  ║  GhostOperator necesita Ollama para funcionar.          ║")
+                        fmt.Println("  ║                                                        ║")
+                        fmt.Println("  ║  1. Descarga Ollama desde:                              ║")
+                        fmt.Println("  ║     https://ollama.com/download                        ║")
+                        fmt.Println("  ║                                                        ║")
+                        fmt.Println("  ║  2. Instalalo y asegurate de que esté corriendo          ║")
+                        fmt.Println("  ║     (debería ver un icono en la bandeja del sistema).   ║")
+                        fmt.Println("  ║                                                        ║")
+                        fmt.Println("  ║  3. Luego ejecuta GhostOperator nuevamente.              ║")
+                        fmt.Println("  ╚══════════════════════════════════════════════════════════╝")
+                        fmt.Println()
+                        return fmt.Errorf("Ollama no está disponible. Instálalo desde https://ollama.com/download")
+                }
+        }
 
         // Auto-detect weak hardware and enable fallback mode
         if cfg.FallbackAutoDetect {
