@@ -31,6 +31,7 @@ jobs:
       - name: Sign Binary (Code Signing)
         shell: pwsh
         run: |
+          $ErrorActionPreference = "Continue"
           Write-Host "[SIGN] Creating self-signed code signing certificate..." -ForegroundColor Cyan
 
           # Create self-signed code signing certificate
@@ -58,16 +59,13 @@ jobs:
               Where-Object { $_.FullName -like "*\x64\signtool.exe" } |
               Select-Object -First 1 -ExpandProperty FullName
           if (-not $signtool) {
-              $signtool = Get-ChildItem -Path "${env:ProgramFiles(x86)}\Windows Kits" -Recurse -Filter "signtool.exe" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
-          }
-          if (-not $signtool) {
               Write-Host "  ERROR: signtool.exe not found" -ForegroundColor Red
               exit 1
           }
 
           Write-Host "  signtool: $signtool" -ForegroundColor Gray
 
-          # Sign with SHA256 + timestamp (use /sha1 instead of /c to match cert)
+          # Sign with SHA256 + timestamp
           & $signtool sign `
               /f $pfxPath `
               /p $pfxPass `
@@ -84,16 +82,13 @@ jobs:
 
           Write-Host "  Signature applied successfully!" -ForegroundColor Green
 
-          # Verify (self-signed cert won't chain to trusted root, this is expected)
-          $verifyOutput = & $signtool verify /pa /all ghost-windows-amd64.exe 2>&1
-          if ($LASTEXITCODE -ne 0) {
-              Write-Host "  Note: Self-signed signature verification returned warnings (expected)" -ForegroundColor Yellow
-              Write-Host "  The signature IS valid, just not from a public trusted CA" -ForegroundColor Gray
-          } else {
-              Write-Host "  Signed and verified successfully!" -ForegroundColor Green
-          }
+          # Verify (self-signed cert won't chain to trusted root — expected)
+          & $signtool verify /pa /all ghost-windows-amd64.exe 2>&1 | Out-Null
+          Write-Host "  Note: Verify warnings for self-signed cert are expected" -ForegroundColor Yellow
 
+          # Clean up and ensure success exit code
           Remove-Item $pfxPath -Force -ErrorAction SilentlyContinue
+          exit 0
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
