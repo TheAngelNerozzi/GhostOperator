@@ -29,6 +29,10 @@ type PhantomPulse struct {
 	Config         *config.AppConfig
 	ActiveBudgetMs int
 
+	// fallbackActive tracks whether fallback mode is active locally,
+	// without mutating the shared AppConfig.
+	fallbackActive bool
+
 	// Predictor Cache (Phase B: Fluidez Extrema)
 	lastX      int
 	lastY      int
@@ -40,15 +44,11 @@ type PhantomPulse struct {
 func NewPhantomPulse(cfg *config.AppConfig, visionClient *llm.VisionClient, m machine.Machine) *PhantomPulse {
 	profile := DetectHardwareProfile()
 
-	// Auto-detect: if config says auto-detect, activate fallback when hardware is weak
-	if cfg.FallbackAutoDetect && profile.IsWeak && !cfg.HardwareFallback {
-		cfg.HardwareFallback = true
-	}
+	// Determine fallback status locally without mutating the shared config.
+	fallbackActive := cfg.HardwareFallback || (cfg.FallbackAutoDetect && profile.IsWeak)
 
-	budget := 2500 // Normal budget
-	if cfg.HardwareFallback {
-		budget = cfg.FallbackBudgetMs
-	}
+	// Use the centralized EffectiveBudgetMs instead of inline logic.
+	budget := EffectiveBudgetMs(fallbackActive, profile, cfg.FallbackBudgetMs)
 
 	return &PhantomPulse{
 		Vision:         visionClient,
@@ -56,20 +56,27 @@ func NewPhantomPulse(cfg *config.AppConfig, visionClient *llm.VisionClient, m ma
 		Profile:        profile,
 		Config:         cfg,
 		ActiveBudgetMs: budget,
+		fallbackActive: fallbackActive,
 	}
 }
 
 // FallbackActive returns true if the engine is operating in fallback mode.
 func (pp *PhantomPulse) FallbackActive() bool {
-	return pp.Config.HardwareFallback
+	return pp.fallbackActive
 }
 
 // isDeltaLow calculates frame difference (Predictor Cache core)
 func (pp *PhantomPulse) isDeltaLow(current, prev image.Image) bool {
 	cb := current.Bounds()
 	pb := prev.Bounds()
-	if cb != pb { return false }
-	// Quick sample-based diff 
+	if cb != pb {
+		return false
+	}
+	// Guard against zero-dimension images to prevent division-by-zero in modulo.
+	if cb.Dx() == 0 || cb.Dy() == 0 {
+		return false
+	}
+	// Quick sample-based diff
 	diff := 0
 	samples := 100
 	for i := 0; i < samples; i++ {
@@ -77,9 +84,11 @@ func (pp *PhantomPulse) isDeltaLow(current, prev image.Image) bool {
 		y := (i * 31) % cb.Dy()
 		r1, g1, b1, _ := current.At(x, y).RGBA()
 		r2, g2, b2, _ := prev.At(x, y).RGBA()
-		if r1 != r2 || g1 != g2 || b1 != b2 { diff++ }
+		if r1 != r2 || g1 != g2 || b1 != b2 {
+			diff++
+		}
 	}
-	return (float64(diff)/float64(samples)) < 0.05
+	return (float64(diff) / float64(samples)) < 0.05
 }
 
 // Execute runs the full PhantomPulse pipeline: EYE -> BRAIN -> ARM
@@ -94,6 +103,13 @@ func (pp *PhantomPulse) Execute(ctx context.Context, intent string, logger func(
 		return metrics, fmt.Errorf("capture failed: %w", err)
 	}
 	metrics.CaptureTime = time.Since(captureStart)
+
+	// Check for context cancellation between EYE → BRAIN
+	select {
+	case <-ctx.Done():
+		return metrics, ctx.Err()
+	default:
+	}
 
 	// --- PHASE 1.5: GHOST PREDICTOR (Phase B Core) ---
 	if intent == pp.lastIntent && pp.lastInput != nil {
@@ -110,7 +126,12 @@ func (pp *PhantomPulse) Execute(ctx context.Context, intent string, logger func(
 	resizedImg := pp.adaptiveResize(rawImg)
 
 	var gridCfg vision.GridConfig
-	fmt.Sscanf(pp.Config.GridDensity, "%dx%d", &gridCfg.Rows, &gridCfg.Cols)
+	n, err := fmt.Sscanf(pp.Config.GridDensity, "%dx%d", &gridCfg.Rows, &gridCfg.Cols)
+	if err != nil || n != 2 || gridCfg.Rows == 0 || gridCfg.Cols == 0 {
+		// Safe defaults if parsing fails or values are zero
+		gridCfg.Rows = 20
+		gridCfg.Cols = 20
+	}
 
 	// Fallback: reduce grid density to lower LLM token count on weak hardware
 	if pp.FallbackActive() && gridCfg.Rows > 12 {
@@ -124,7 +145,9 @@ func (pp *PhantomPulse) Execute(ctx context.Context, intent string, logger func(
 	}
 
 	// Save debug frame for UAT (User Acceptance Testing)
-	_ = vision.SaveDebugFrame(gridData)
+	if err := vision.SaveDebugFrame(gridData); err != nil {
+		logger(fmt.Sprintf("debug frame save failed: %v", err))
+	}
 
 	label, err := pp.Vision.ReasonFast(ctx, gridData, intent)
 	if err != nil {
@@ -144,6 +167,13 @@ func (pp *PhantomPulse) Execute(ctx context.Context, intent string, logger func(
 	pp.lastIntent = intent
 	pp.lastX = pixelX
 	pp.lastY = pixelY
+
+	// Check for context cancellation between BRAIN → ARM
+	select {
+	case <-ctx.Done():
+		return metrics, ctx.Err()
+	default:
+	}
 
 	// Phase 3: ARM (Execution)
 	return pp.executeAction(pixelX, pixelY, metrics, start)

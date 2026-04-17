@@ -1,18 +1,72 @@
 package ui
 
 import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"os/exec"
+	"os/signal"
 	"runtime"
+	"syscall"
 	"time"
 
 	"github.com/TheAngelNerozzi/ghostoperator/internal/core"
 	"github.com/TheAngelNerozzi/ghostoperator/internal/machine"
 	"github.com/TheAngelNerozzi/ghostoperator/pkg/config"
 )
+
+// csrfToken is a random token generated once per server start for CSRF protection.
+var csrfToken string
+
+func init() {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		// Fallback to timestamp-based token if crypto/rand fails
+		csrfToken = fmt.Sprintf("%d", time.Now().UnixNano())
+		return
+	}
+	csrfToken = hex.EncodeToString(b)
+}
+
+// validateCSRF checks the double-submit cookie pattern for POST requests.
+func validateCSRF(w http.ResponseWriter, r *http.Request) bool {
+	if r.Method != http.MethodPost {
+		return true // Only validate POST requests
+	}
+	// Check cookie
+	cookie, err := r.Cookie("ghost_csrf")
+	if err != nil {
+		http.Error(w, "Missing CSRF token", http.StatusForbidden)
+		return false
+	}
+	// Check header or form value
+	headerToken := r.Header.Get("X-CSRF-Token")
+	formToken := r.FormValue("csrf_token")
+	submittedToken := headerToken
+	if submittedToken == "" {
+		submittedToken = formToken
+	}
+	if submittedToken == "" || submittedToken != cookie.Value || submittedToken != csrfToken {
+		http.Error(w, "Invalid CSRF token", http.StatusForbidden)
+		return false
+	}
+	return true
+}
+
+// csrfMiddleware wraps an http.HandlerFunc with CSRF validation for POST requests.
+func csrfMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && !validateCSRF(w, r) {
+			return
+		}
+		next(w, r)
+	}
+}
 
 // ShowDashboard launches the Ghost Mode web UI in the default browser.
 func ShowDashboard(version string, cfg *config.AppConfig, m machine.Machine, onStart func(string, func(string))) {
@@ -22,12 +76,20 @@ func ShowDashboard(version string, cfg *config.AppConfig, m machine.Machine, onS
 
 	// Serve the main dashboard page
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// Set CSRF cookie on page load
+		http.SetCookie(w, &http.Cookie{
+			Name:     "ghost_csrf",
+			Value:    csrfToken,
+			Path:     "/",
+			HttpOnly: false, // Needs to be readable by JS for double-submit
+			SameSite: http.SameSiteStrictMode,
+		})
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprintf(w, dashboardHTML, version, version, version)
+		fmt.Fprintf(w, dashboardHTML, version, version, csrfToken, version)
 	})
 
 	// Mission execution endpoint (streams Server-Sent Events)
-	mux.HandleFunc("/mission", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/mission", csrfMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method Not Allowed", 405)
 			return
@@ -49,16 +111,13 @@ func ShowDashboard(version string, cfg *config.AppConfig, m machine.Machine, onS
 
 		onStart(mission, func(status string) {
 			defer func() { recover() }() // Prevent panic if writer is closed
-			if w == nil {
-				return
-			}
 			fmt.Fprintf(w, "data: %s\n\n", status)
 			flusher.Flush()
 		})
 
 		fmt.Fprintf(w, "data: ✅ Misión completada.\n\n")
 		flusher.Flush()
-	})
+	}))
 
 	// Metrics endpoint for PhantomPulse
 	mux.HandleFunc("/api/metrics", func(w http.ResponseWriter, r *http.Request) {
@@ -71,13 +130,25 @@ func ShowDashboard(version string, cfg *config.AppConfig, m machine.Machine, onS
 		client := http.Client{Timeout: 1 * time.Second}
 		resp, err := client.Get(cfg.OllamaEndpoint + "/api/version")
 		status := "ok"
+		var ollamaVersion string
 		if err != nil {
 			status = "error"
 		} else {
 			defer resp.Body.Close()
+			var versionResp struct {
+				Version string `json:"version"`
+			}
+			if json.NewDecoder(resp.Body).Decode(&versionResp) == nil && versionResp.Version != "" {
+				ollamaVersion = versionResp.Version
+			}
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": status, "model": cfg.OllamaModel})
+		json.NewEncoder(w).Encode(map[string]string{
+			"status":        status,
+			"model":         cfg.OllamaModel,
+			"ollama_version": ollamaVersion,
+			"grid_density":  cfg.GridDensity,
+		})
 	})
 
 	// Hardware profile endpoint for fallback mode indicator
@@ -95,7 +166,7 @@ func ShowDashboard(version string, cfg *config.AppConfig, m machine.Machine, onS
 	})
 
 	// Toggle fallback mode on/off and persist to config
-	mux.HandleFunc("/api/fallback/toggle", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/fallback/toggle", csrfMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method Not Allowed", 405)
 			return
@@ -107,20 +178,20 @@ func ShowDashboard(version string, cfg *config.AppConfig, m machine.Machine, onS
 			"fallback_active": cfg.HardwareFallback,
 			"budget_ms":       cfg.FallbackBudgetMs,
 		})
-	})
+	}))
 
 	// Resume mission after interruption
-	mux.HandleFunc("/api/resume", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/resume", csrfMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method Not Allowed", 405)
 			return
 		}
 		// Reset the machine's interruption state
 		m.ResetIntervention()
-		
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "resumed"})
-	})
+	}))
 
 	// Find a free port
 	listener, err := net.Listen("tcp", "127.0.0.1:7474")
@@ -152,9 +223,26 @@ func ShowDashboard(version string, cfg *config.AppConfig, m machine.Machine, onS
 		}
 	}()
 
-	if err := http.Serve(listener, mux); err != nil {
-		fmt.Println("❌ UI server error:", err)
+	// Graceful shutdown with signal handling
+	srv := &http.Server{Handler: mux}
+	go func() {
+		if err := srv.Serve(listener); err != nil && err != http.ErrServerClosed {
+			fmt.Println("❌ UI server error:", err)
+		}
+	}()
+
+	// Wait for interrupt signal
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	fmt.Println("\n\033[1;33m[UI]\033[0m Shutting down gracefully...")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		fmt.Println("❌ UI server forced shutdown:", err)
 	}
+	fmt.Println("\033[1;32m[UI]\033[0m Server stopped.")
 }
 
 const dashboardHTML = `<!DOCTYPE html>
@@ -230,7 +318,7 @@ const dashboardHTML = `<!DOCTYPE html>
   .dot.error { background: var(--error); box-shadow: 0 0 10px var(--error); }
 
   .terminal {
-    background: (0,0,0,0.5);
+    background: rgba(0,0,0,0.5);
     display: flex;
     flex-direction: column;
     padding: 40px;
@@ -298,6 +386,15 @@ const dashboardHTML = `<!DOCTYPE html>
 
   ::-webkit-scrollbar { width: 4px; }
   ::-webkit-scrollbar-thumb { background: var(--border); }
+
+  /* Responsive: collapse sidebar on small screens */
+  @media (max-width: 768px) {
+    main { grid-template-columns: 1fr; }
+    aside { display: none; }
+    header { padding: 16px 20px; }
+    .terminal { padding: 20px; }
+    .input-container { left: 20px; right: 20px; bottom: 20px; }
+  }
 </style>
 </head>
 <body>
@@ -321,12 +418,12 @@ const dashboardHTML = `<!DOCTYPE html>
       <div class="section-title">Hardware Profile</div>
       <div class="status-card">
         <div class="status-item">
-          <span>Ollama v0.1.30</span>
-          <span style="color:var(--success)">Conectado</span>
+          <span id="ollama-label">Ollama</span>
+          <span id="ollama-status" style="color:var(--muted)">...</span>
         </div>
         <div class="status-item" id="model-container">
-          <span>Moondream v2</span>
-          <span style="color:var(--muted)">Cargado</span>
+          <span id="model-label">Model</span>
+          <span id="model-status" style="color:var(--muted)">...</span>
         </div>
       </div>
     </div>
@@ -336,7 +433,7 @@ const dashboardHTML = `<!DOCTYPE html>
       <div class="status-card">
         <div class="status-item">
           <span>Densidad</span>
-          <span>20x20</span>
+          <span id="grid-density">...</span>
         </div>
         <div class="status-item">
           <span>Alpha-Numeric</span>
@@ -352,6 +449,7 @@ const dashboardHTML = `<!DOCTYPE html>
       <div>Esperando instrucciones de misión...</div>
     </div>
     <div class="input-container">
+      <input type="hidden" id="csrf_token" value="%s">
       <input type="text" id="intent" placeholder="Orden natural (ej: 'abre chrome', 'busca gmail'...)" autofocus>
       <button onclick="ejecutar()">Ejecutar</button>
     </div>
@@ -362,11 +460,12 @@ const dashboardHTML = `<!DOCTYPE html>
 const log = document.getElementById('log');
 const input = document.getElementById('intent');
 const modal = document.getElementById('modal');
+const csrfToken = document.getElementById('csrf_token').value;
 
 input.addEventListener('keydown', e => { if(e.key === 'Enter') ejecutar(); });
 
 function continuar() {
-  fetch('/api/resume', {method: 'POST'})
+  fetch('/api/resume', {method: 'POST', headers: {'X-CSRF-Token': csrfToken}})
     .then(() => {
         modal.style.display = 'none';
         const nd = document.createElement('div');
@@ -384,8 +483,8 @@ function ejecutar() {
   log.appendChild(d);
   input.value = '';
   
-  const body = new URLSearchParams({intent: v});
-  fetch('/mission', {method: 'POST', body: body})
+  const body = new URLSearchParams({intent: v, csrf_token: csrfToken});
+  fetch('/mission', {method: 'POST', body: body, headers: {'X-CSRF-Token': csrfToken}})
     .then(r => {
       const reader = r.body.getReader();
       const dec = new TextDecoder();
@@ -413,22 +512,49 @@ function ejecutar() {
     });
 }
 
-// Check Local AI health regularly
+// Check Local AI health regularly and update sidebar dynamically
 setInterval(() => {
   fetch('/api/health')
     .then(r => r.json())
     .then(d => {
        const dot = document.getElementById('health-dot');
        const text = document.getElementById('health-text');
+       const ollamaLabel = document.getElementById('ollama-label');
+       const ollamaStatus = document.getElementById('ollama-status');
+       const modelLabel = document.getElementById('model-label');
+       const modelStatus = document.getElementById('model-status');
+       const gridDensity = document.getElementById('grid-density');
+
        if(d.status === 'ok') {
          dot.className = 'dot';
          text.textContent = 'LOCAL AI: LISTO';
+         ollamaStatus.textContent = 'Conectado';
+         ollamaStatus.style.color = 'var(--success)';
+         if(d.ollama_version) {
+           ollamaLabel.textContent = 'Ollama v' + d.ollama_version;
+         }
        } else {
          dot.className = 'dot error';
          text.textContent = 'OLLAMA: OFFLINE';
+         ollamaStatus.textContent = 'Desconectado';
+         ollamaStatus.style.color = 'var(--error)';
+       }
+
+       if(d.model) {
+         modelLabel.textContent = d.model;
+         modelStatus.textContent = d.status === 'ok' ? 'Cargado' : 'N/A';
+       }
+       if(d.grid_density) {
+         gridDensity.textContent = d.grid_density;
        }
     });
 }, 5000);
+
+// Trigger initial health check
+setTimeout(() => fetch('/api/health').then(r => r.json()).then(d => {
+  const evt = new Event('poll');
+  document.dispatchEvent(evt);
+}), 1000);
 </script>
 </body>
 </html>`
