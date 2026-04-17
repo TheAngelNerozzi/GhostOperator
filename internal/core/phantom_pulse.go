@@ -1,228 +1,243 @@
 package core
 
 import (
-	"context"
-	"fmt"
-	"image"
-	"time"
+        "context"
+        "fmt"
+        "image"
+        "sync"
+        "time"
 
-	"github.com/TheAngelNerozzi/ghostoperator/internal/llm"
-	"github.com/TheAngelNerozzi/ghostoperator/internal/machine"
-	"github.com/TheAngelNerozzi/ghostoperator/internal/vision"
-	"github.com/TheAngelNerozzi/ghostoperator/pkg/config"
-	"golang.org/x/image/draw"
+        "github.com/TheAngelNerozzi/ghostoperator/internal/llm"
+        "github.com/TheAngelNerozzi/ghostoperator/internal/machine"
+        "github.com/TheAngelNerozzi/ghostoperator/internal/vision"
+        "github.com/TheAngelNerozzi/ghostoperator/pkg/config"
+        "golang.org/x/image/draw"
 )
 
 // PulseMetrics tracks the execution time of each phase
 type PulseMetrics struct {
-	TotalTime   time.Duration `json:"total_time"`
-	CaptureTime time.Duration `json:"capture_time"`
-	VisionTime  time.Duration `json:"vision_time"`
-	ActionTime  time.Duration `json:"action_time"`
+        TotalTime   time.Duration `json:"total_time"`
+        CaptureTime time.Duration `json:"capture_time"`
+        VisionTime  time.Duration `json:"vision_time"`
+        ActionTime  time.Duration `json:"action_time"`
 }
 
 // PhantomPulse is the core orchestration engine
 type PhantomPulse struct {
-	Vision         *llm.VisionClient
-	Machine        machine.Machine
-	Profile        HardwareProfile
-	Config         *config.AppConfig
-	ActiveBudgetMs int
+        Vision         *llm.VisionClient
+        Machine        machine.Machine
+        Profile        HardwareProfile
+        Config         *config.AppConfig
+        ActiveBudgetMs int
 
-	// fallbackActive tracks whether fallback mode is active locally,
-	// without mutating the shared AppConfig.
-	fallbackActive bool
+        // fallbackActive tracks whether fallback mode is active locally,
+        // without mutating the shared AppConfig.
+        fallbackActive bool
 
-	// Predictor Cache (Phase B: Fluidez Extrema)
-	lastX      int
-	lastY      int
-	lastInput  image.Image
-	lastIntent string
+        // Predictor Cache (Phase B: Fluidez Extrema)
+        // Protected by mu to prevent data races from concurrent Execute() calls.
+        mu          sync.Mutex
+        lastX       int
+        lastY       int
+        lastInput   image.Image
+        lastIntent  string
 }
 
 // NewPhantomPulse creates a new PhantomPulse engine with hardware-aware budget.
 func NewPhantomPulse(cfg *config.AppConfig, visionClient *llm.VisionClient, m machine.Machine) *PhantomPulse {
-	profile := DetectHardwareProfile()
+        profile := DetectHardwareProfile()
 
-	// Determine fallback status locally without mutating the shared config.
-	fallbackActive := cfg.HardwareFallback || (cfg.FallbackAutoDetect && profile.IsWeak)
+        // Determine fallback status locally without mutating the shared config.
+        fallbackActive := cfg.HardwareFallback || (cfg.FallbackAutoDetect && profile.IsWeak)
 
-	// Use the centralized EffectiveBudgetMs instead of inline logic.
-	budget := EffectiveBudgetMs(fallbackActive, profile, cfg.FallbackBudgetMs)
+        // Use the centralized EffectiveBudgetMs instead of inline logic.
+        budget := EffectiveBudgetMs(fallbackActive, profile, cfg.FallbackBudgetMs)
 
-	return &PhantomPulse{
-		Vision:         visionClient,
-		Machine:        m,
-		Profile:        profile,
-		Config:         cfg,
-		ActiveBudgetMs: budget,
-		fallbackActive: fallbackActive,
-	}
+        return &PhantomPulse{
+                Vision:         visionClient,
+                Machine:        m,
+                Profile:        profile,
+                Config:         cfg,
+                ActiveBudgetMs: budget,
+                fallbackActive: fallbackActive,
+        }
 }
 
 // FallbackActive returns true if the engine is operating in fallback mode.
 func (pp *PhantomPulse) FallbackActive() bool {
-	return pp.fallbackActive
+        return pp.fallbackActive
 }
 
 // isDeltaLow calculates frame difference (Predictor Cache core)
 func (pp *PhantomPulse) isDeltaLow(current, prev image.Image) bool {
-	cb := current.Bounds()
-	pb := prev.Bounds()
-	if cb != pb {
-		return false
-	}
-	// Guard against zero-dimension images to prevent division-by-zero in modulo.
-	if cb.Dx() == 0 || cb.Dy() == 0 {
-		return false
-	}
-	// Quick sample-based diff
-	diff := 0
-	samples := 100
-	for i := 0; i < samples; i++ {
-		x := (i * 17) % cb.Dx()
-		y := (i * 31) % cb.Dy()
-		r1, g1, b1, _ := current.At(x, y).RGBA()
-		r2, g2, b2, _ := prev.At(x, y).RGBA()
-		if r1 != r2 || g1 != g2 || b1 != b2 {
-			diff++
-		}
-	}
-	return (float64(diff) / float64(samples)) < 0.05
+        cb := current.Bounds()
+        pb := prev.Bounds()
+        if cb != pb {
+                return false
+        }
+        // Guard against zero-dimension images to prevent division-by-zero in modulo.
+        if cb.Dx() == 0 || cb.Dy() == 0 {
+                return false
+        }
+        // Quick sample-based diff
+        diff := 0
+        samples := 100
+        for i := 0; i < samples; i++ {
+                x := (i * 17) % cb.Dx()
+                y := (i * 31) % cb.Dy()
+                r1, g1, b1, a1 := current.At(x, y).RGBA()
+                r2, g2, b2, a2 := prev.At(x, y).RGBA()
+                if r1 != r2 || g1 != g2 || b1 != b2 || a1 != a2 {
+                        diff++
+                }
+        }
+        return (float64(diff) / float64(samples)) < 0.05
 }
 
 // Execute runs the full PhantomPulse pipeline: EYE -> BRAIN -> ARM
 func (pp *PhantomPulse) Execute(ctx context.Context, intent string, logger func(string)) (PulseMetrics, error) {
-	metrics := PulseMetrics{}
-	start := time.Now()
+        metrics := PulseMetrics{}
+        start := time.Now()
 
-	// Phase 1: EYE (Capture & Compress)
-	captureStart := time.Now()
-	rawImg, err := pp.Machine.Capture()
-	if err != nil {
-		return metrics, fmt.Errorf("capture failed: %w", err)
-	}
-	metrics.CaptureTime = time.Since(captureStart)
+        // Phase 1: EYE (Capture & Compress)
+        captureStart := time.Now()
+        rawImg, err := pp.Machine.Capture()
+        if err != nil {
+                return metrics, fmt.Errorf("capture failed: %w", err)
+        }
+        metrics.CaptureTime = time.Since(captureStart)
 
-	// Check for context cancellation between EYE → BRAIN
-	select {
-	case <-ctx.Done():
-		return metrics, ctx.Err()
-	default:
-	}
+        // Check for context cancellation between EYE → BRAIN
+        select {
+        case <-ctx.Done():
+                return metrics, ctx.Err()
+        default:
+        }
 
-	// --- PHASE 1.5: GHOST PREDICTOR (Phase B Core) ---
-	if intent == pp.lastIntent && pp.lastInput != nil {
-		if pp.isDeltaLow(rawImg, pp.lastInput) {
-			logger("🚀 [PREDICTOR] UI estable detectada. Accionando sin inferencia (+2s ahorro)")
-			return pp.executeAction(pp.lastX, pp.lastY, metrics, start)
-		}
-	}
+        // --- PHASE 1.5: GHOST PREDICTOR (Phase B Core) ---
+        pp.mu.Lock()
+        prevInput, prevIntent, prevX, prevY := pp.lastInput, pp.lastIntent, pp.lastX, pp.lastY
+        pp.mu.Unlock()
 
-	// Phase 2: BRAIN (VLM Reasoning)
-	visionStart := time.Now()
+        if intent == prevIntent && prevInput != nil {
+                if pp.isDeltaLow(rawImg, prevInput) {
+                        // Check context before acting on cached prediction
+                        select {
+                        case <-ctx.Done():
+                                return metrics, ctx.Err()
+                        default:
+                        }
+                        logger("🚀 [PREDICTOR] UI estable detectada. Accionando sin inferencia (+2s ahorro)")
+                        return pp.executeAction(prevX, prevY, metrics, start)
+                }
+        }
 
-	// ARS: Adaptive Resolution Scaling
-	resizedImg := pp.adaptiveResize(rawImg)
+        // Phase 2: BRAIN (VLM Reasoning)
+        visionStart := time.Now()
 
-	var gridCfg vision.GridConfig
-	n, err := fmt.Sscanf(pp.Config.GridDensity, "%dx%d", &gridCfg.Rows, &gridCfg.Cols)
-	if err != nil || n != 2 || gridCfg.Rows == 0 || gridCfg.Cols == 0 {
-		// Safe defaults if parsing fails or values are zero
-		gridCfg.Rows = 20
-		gridCfg.Cols = 20
-	}
+        // ARS: Adaptive Resolution Scaling
+        resizedImg := pp.adaptiveResize(rawImg)
 
-	// Fallback: reduce grid density to lower LLM token count on weak hardware
-	if pp.FallbackActive() && gridCfg.Rows > 12 {
-		gridCfg.Rows = 12
-		gridCfg.Cols = 12
-	}
+        var gridCfg vision.GridConfig
+        n, err := fmt.Sscanf(pp.Config.GridDensity, "%dx%d", &gridCfg.Rows, &gridCfg.Cols)
+        if err != nil || n != 2 || gridCfg.Rows == 0 || gridCfg.Cols == 0 {
+                // Safe defaults if parsing fails or values are zero
+                gridCfg.Rows = 20
+                gridCfg.Cols = 20
+        }
 
-	gridData, err := vision.DrawGrid(resizedImg, gridCfg)
-	if err != nil {
-		return metrics, fmt.Errorf("grid generation failed: %w", err)
-	}
+        // Fallback: reduce grid density to lower LLM token count on weak hardware
+        if pp.FallbackActive() && gridCfg.Rows > 12 {
+                gridCfg.Rows = 12
+                gridCfg.Cols = 12
+        }
 
-	// Save debug frame for UAT (User Acceptance Testing)
-	if err := vision.SaveDebugFrame(gridData); err != nil {
-		logger(fmt.Sprintf("debug frame save failed: %v", err))
-	}
+        gridData, err := vision.DrawGrid(resizedImg, gridCfg)
+        if err != nil {
+                return metrics, fmt.Errorf("grid generation failed: %w", err)
+        }
 
-	label, err := pp.Vision.ReasonFast(ctx, gridData, intent)
-	if err != nil {
-		return metrics, fmt.Errorf("vision reasoning failed: %w", err)
-	}
+        // Save debug frame for UAT (User Acceptance Testing)
+        if err := vision.SaveDebugFrame(gridData); err != nil {
+                logger(fmt.Sprintf("debug frame save failed: %v", err))
+        }
 
-	bounds := rawImg.Bounds()
-	pixelX, pixelY, err := vision.MapLabelToPixel(label, bounds, gridCfg)
-	if err != nil {
-		return metrics, fmt.Errorf("mapping label to pixel failed: %w", err)
-	}
+        label, err := pp.Vision.ReasonFast(ctx, gridData, intent)
+        if err != nil {
+                return metrics, fmt.Errorf("vision reasoning failed: %w", err)
+        }
 
-	metrics.VisionTime = time.Since(visionStart)
+        bounds := rawImg.Bounds()
+        pixelX, pixelY, err := vision.MapLabelToPixel(label, bounds, gridCfg)
+        if err != nil {
+                return metrics, fmt.Errorf("mapping label to pixel failed: %w", err)
+        }
 
-	// Update Predictor Cache for next cycle
-	pp.lastInput = rawImg
-	pp.lastIntent = intent
-	pp.lastX = pixelX
-	pp.lastY = pixelY
+        metrics.VisionTime = time.Since(visionStart)
 
-	// Check for context cancellation between BRAIN → ARM
-	select {
-	case <-ctx.Done():
-		return metrics, ctx.Err()
-	default:
-	}
+        // Update Predictor Cache for next cycle
+        pp.mu.Lock()
+        pp.lastInput = rawImg
+        pp.lastIntent = intent
+        pp.lastX = pixelX
+        pp.lastY = pixelY
+        pp.mu.Unlock()
 
-	// Phase 3: ARM (Execution)
-	return pp.executeAction(pixelX, pixelY, metrics, start)
+        // Check for context cancellation between BRAIN → ARM
+        select {
+        case <-ctx.Done():
+                return metrics, ctx.Err()
+        default:
+        }
+
+        // Phase 3: ARM (Execution)
+        return pp.executeAction(pixelX, pixelY, metrics, start)
 }
 
 func (pp *PhantomPulse) executeAction(x, y int, metrics PulseMetrics, start time.Time) (PulseMetrics, error) {
-	actionStart := time.Now()
+        actionStart := time.Now()
 
-	// Interruption Check BEFORE moving
-	if pp.Machine.IsInterrupted() {
-		return metrics, fmt.Errorf("USER_INTERRUPTED: Has movido el ratón. Deteniendo misión.")
-	}
+        // Interruption Check BEFORE moving
+        if pp.Machine.IsInterrupted() {
+                return metrics, fmt.Errorf("USER_INTERRUPTED: Has movido el ratón. Deteniendo misión.")
+        }
 
-	// Execution via Universal Machine Interface
-	err := pp.Machine.Click(x, y)
-	if err != nil {
-		return metrics, err
-	}
+        // Execution via Universal Machine Interface
+        err := pp.Machine.Click(x, y)
+        if err != nil {
+                return metrics, err
+        }
 
-	// Post-Action Interruption Check
-	if pp.Machine.IsInterrupted() {
-		return metrics, fmt.Errorf("USER_INTERRUPTED: Has movido el ratón durante la ejecución.")
-	}
+        // Post-Action Interruption Check
+        if pp.Machine.IsInterrupted() {
+                return metrics, fmt.Errorf("USER_INTERRUPTED: Has movido el ratón durante la ejecución.")
+        }
 
-	metrics.ActionTime = time.Since(actionStart)
-	metrics.TotalTime = time.Since(start)
+        metrics.ActionTime = time.Since(actionStart)
+        metrics.TotalTime = time.Since(start)
 
-	return metrics, nil
+        return metrics, nil
 }
 
 // adaptiveResize (ARS Algorithm) scales image to minimal effective resolution.
 func (pp *PhantomPulse) adaptiveResize(src image.Image) image.Image {
-	if !pp.Config.PhantomPulseEnabled {
-		return src
-	}
+        if !pp.Config.PhantomPulseEnabled {
+                return src
+        }
 
-	bounds := src.Bounds()
-	targetW := 1280
-	targetH := 720
-	if pp.FallbackActive() {
-		targetW = 960
-		targetH = 540
-	}
+        bounds := src.Bounds()
+        targetW := 1280
+        targetH := 720
+        if pp.FallbackActive() {
+                targetW = 960
+                targetH = 540
+        }
 
-	if bounds.Dx() <= targetW {
-		return src
-	}
+        if bounds.Dx() <= targetW && bounds.Dy() <= targetH {
+                return src
+        }
 
-	dst := image.NewRGBA(image.Rect(0, 0, targetW, targetH))
-	draw.ApproxBiLinear.Scale(dst, dst.Bounds(), src, src.Bounds(), draw.Over, nil)
-	return dst
+        dst := image.NewRGBA(image.Rect(0, 0, targetW, targetH))
+        draw.ApproxBiLinear.Scale(dst, dst.Bounds(), src, src.Bounds(), draw.Over, nil)
+        return dst
 }

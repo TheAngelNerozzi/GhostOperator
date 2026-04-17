@@ -2,51 +2,55 @@
 package machine
 
 import (
-	"fmt"
-	"image"
-	"github.com/kbinani/screenshot"
+        "fmt"
+        "image"
+        "github.com/kbinani/screenshot"
 )
 
 type LinuxMachine struct {
-	// Linux specific fields
+        // Linux specific fields
 }
 
 func NewLinuxMachine() *LinuxMachine {
-	return &LinuxMachine{}
+        return &LinuxMachine{}
 }
 
 // NewNativeMachine returns the Linux implementation.
 func NewNativeMachine() Machine {
-	return NewLinuxMachine()
+        return NewLinuxMachine()
 }
 
 func (l *LinuxMachine) Capture() (image.Image, error) {
-	bounds := screenshot.GetDisplayBounds(0)
-	return screenshot.CaptureRect(bounds)
+        n := screenshot.NumActiveDisplays()
+        if n == 0 {
+                return nil, fmt.Errorf("no active displays found")
+        }
+        bounds := screenshot.GetDisplayBounds(0)
+        return screenshot.CaptureRect(bounds)
 }
 
 func (l *LinuxMachine) Move(x, y int) error {
-	fmt.Printf("[Linux] Moving mouse to %d, %d\n", x, y)
-	return nil
+        fmt.Printf("[Linux] Moving mouse to %d, %d\n", x, y)
+        return nil
 }
 
 func (l *LinuxMachine) Click(x, y int) error {
-	fmt.Printf("[Linux] Clicking at %d, %d\n", x, y)
-	return nil
+        fmt.Printf("[Linux] Clicking at %d, %d\n", x, y)
+        return nil
 }
 
 func (l *LinuxMachine) DoubleClick(x, y int) error {
-	fmt.Printf("[Linux] Double-clicking at %d, %d\n", x, y)
-	return nil
+        fmt.Printf("[Linux] Double-clicking at %d, %d\n", x, y)
+        return nil
 }
 
 func (l *LinuxMachine) Type(text string) error {
-	fmt.Printf("[Linux] Typing: %s\n", text)
-	return nil
+        fmt.Printf("[Linux] Typing: %s\n", text)
+        return nil
 }
 
 func (l *LinuxMachine) IsInterrupted() bool {
-	return false
+        return false
 }
 
 func (l *LinuxMachine) ResetIntervention() {}

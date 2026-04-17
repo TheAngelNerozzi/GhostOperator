@@ -21,7 +21,7 @@ func getMarkerPath() (string, error) {
                 return "", fmt.Errorf("failed to determine user config dir: %w", err)
         }
         markerDir := filepath.Join(configDir, "ghostoperator")
-        if err := os.MkdirAll(markerDir, 0755); err != nil {
+        if err := os.MkdirAll(markerDir, 0700); err != nil {
                 return "", fmt.Errorf("failed to create config directory %s: %w", markerDir, err)
         }
         return filepath.Join(markerDir, ".ghost_setup_done"), nil
@@ -45,7 +45,7 @@ func MarkSetupDone() {
                 fmt.Fprintf(os.Stderr, "MarkSetupDone: %v\n", err)
                 return
         }
-        if err := os.WriteFile(markerPath, []byte("v1.1.0-local"), 0644); err != nil {
+        if err := os.WriteFile(markerPath, []byte("v1.1.0-local"), 0600); err != nil {
                 fmt.Fprintf(os.Stderr, "MarkSetupDone: failed to write marker file: %v\n", err)
         }
 }
@@ -80,8 +80,9 @@ func resolveOllamaBinary() string {
 // EnsureOllamaRunning attempts to start Ollama if it's not reachable.
 func EnsureOllamaRunning() bool {
         fmt.Print("  - Verificando servidor Ollama... ")
-        _, err := healthClient.Get("http://127.0.0.1:11434/api/version")
+        resp, err := healthClient.Get("http://127.0.0.1:11434/api/version")
         if err == nil {
+                resp.Body.Close()
                 fmt.Println("\033[1;32mOK\033[0m")
                 return true
         }
@@ -105,11 +106,17 @@ func EnsureOllamaRunning() bool {
                 return false
         }
 
+        // Parent no longer needs to track this detached process
+        if cmd.Process != nil {
+                cmd.Process.Release()
+        }
+
         // Wait for server to wake up
         for i := 0; i < 5; i++ {
                 time.Sleep(2 * time.Second)
-                _, err := healthClient.Get("http://127.0.0.1:11434/api/version")
+                healthResp, err := healthClient.Get("http://127.0.0.1:11434/api/version")
                 if err == nil {
+                        healthResp.Body.Close()
                         fmt.Println("\033[1;32mOK\033[0m")
                         return true
                 }

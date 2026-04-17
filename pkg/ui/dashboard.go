@@ -1,248 +1,277 @@
 package ui
 
 import (
-	"context"
-	"crypto/rand"
-	"encoding/hex"
-	"encoding/json"
-	"fmt"
-	"net"
-	"net/http"
-	"os"
-	"os/exec"
-	"os/signal"
-	"runtime"
-	"syscall"
-	"time"
+        "context"
+        "crypto/rand"
+        "encoding/hex"
+        "encoding/json"
+        "fmt"
+        "net"
+        "net/http"
+        "net/url"
+        "os"
+        "os/exec"
+        "os/signal"
+        "runtime"
+        "sync"
+        "syscall"
+        "time"
 
-	"github.com/TheAngelNerozzi/ghostoperator/internal/core"
-	"github.com/TheAngelNerozzi/ghostoperator/internal/machine"
-	"github.com/TheAngelNerozzi/ghostoperator/pkg/config"
+        "github.com/TheAngelNerozzi/ghostoperator/internal/core"
+        "github.com/TheAngelNerozzi/ghostoperator/internal/machine"
+        "github.com/TheAngelNerozzi/ghostoperator/pkg/config"
 )
 
 // csrfToken is a random token generated once per server start for CSRF protection.
 var csrfToken string
 
 func init() {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		// Fallback to timestamp-based token if crypto/rand fails
-		csrfToken = fmt.Sprintf("%d", time.Now().UnixNano())
-		return
-	}
-	csrfToken = hex.EncodeToString(b)
+        b := make([]byte, 32)
+        if _, err := rand.Read(b); err != nil {
+                // crypto/rand should never fail on modern OSes
+                fmt.Fprintf(os.Stderr, "FATAL: cannot generate CSRF token: %v\n", err)
+                os.Exit(1)
+        }
+        csrfToken = hex.EncodeToString(b)
 }
 
 // validateCSRF checks the double-submit cookie pattern for POST requests.
 func validateCSRF(w http.ResponseWriter, r *http.Request) bool {
-	if r.Method != http.MethodPost {
-		return true // Only validate POST requests
-	}
-	// Check cookie
-	cookie, err := r.Cookie("ghost_csrf")
-	if err != nil {
-		http.Error(w, "Missing CSRF token", http.StatusForbidden)
-		return false
-	}
-	// Check header or form value
-	headerToken := r.Header.Get("X-CSRF-Token")
-	formToken := r.FormValue("csrf_token")
-	submittedToken := headerToken
-	if submittedToken == "" {
-		submittedToken = formToken
-	}
-	if submittedToken == "" || submittedToken != cookie.Value || submittedToken != csrfToken {
-		http.Error(w, "Invalid CSRF token", http.StatusForbidden)
-		return false
-	}
-	return true
+        if r.Method != http.MethodPost {
+                return true // Only validate POST requests
+        }
+        // Check cookie
+        cookie, err := r.Cookie("ghost_csrf")
+        if err != nil {
+                http.Error(w, "Missing CSRF token", http.StatusForbidden)
+                return false
+        }
+        // Check header or form value
+        headerToken := r.Header.Get("X-CSRF-Token")
+        formToken := r.FormValue("csrf_token")
+        submittedToken := headerToken
+        if submittedToken == "" {
+                submittedToken = formToken
+        }
+        if submittedToken == "" || submittedToken != cookie.Value || submittedToken != csrfToken {
+                http.Error(w, "Invalid CSRF token", http.StatusForbidden)
+                return false
+        }
+        return true
 }
 
 // csrfMiddleware wraps an http.HandlerFunc with CSRF validation for POST requests.
 func csrfMiddleware(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost && !validateCSRF(w, r) {
-			return
-		}
-		next(w, r)
-	}
+        return func(w http.ResponseWriter, r *http.Request) {
+                if r.Method == http.MethodPost && !validateCSRF(w, r) {
+                        return
+                }
+                next(w, r)
+        }
 }
 
 // ShowDashboard launches the Ghost Mode web UI in the default browser.
 func ShowDashboard(version string, cfg *config.AppConfig, m machine.Machine, onStart func(string, func(string))) {
-	mux := http.NewServeMux()
+        mux := http.NewServeMux()
 
-	var lastMetrics core.PulseMetrics
+        // Mutex to protect concurrent access to cfg
+        var cfgMu sync.RWMutex
 
-	// Serve the main dashboard page
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		// Set CSRF cookie on page load
-		http.SetCookie(w, &http.Cookie{
-			Name:     "ghost_csrf",
-			Value:    csrfToken,
-			Path:     "/",
-			HttpOnly: false, // Needs to be readable by JS for double-submit
-			SameSite: http.SameSiteStrictMode,
-		})
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprintf(w, dashboardHTML, version, version, csrfToken, version)
-	})
+        var lastMetrics core.PulseMetrics
 
-	// Mission execution endpoint (streams Server-Sent Events)
-	mux.HandleFunc("/mission", csrfMiddleware(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "Method Not Allowed", 405)
-			return
-		}
-		mission := r.FormValue("intent")
-		if mission == "" {
-			http.Error(w, "No intent provided", 400)
-			return
-		}
+        // writeJSON is a helper that encodes JSON and sets the Content-Type header.
+        writeJSON := func(w http.ResponseWriter, v interface{}) {
+                w.Header().Set("Content-Type", "application/json")
+                if err := json.NewEncoder(w).Encode(v); err != nil {
+                        fmt.Printf("Warning: JSON encode error: %v\n", err)
+                }
+        }
 
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.Header().Set("Cache-Control", "no-cache")
-		w.Header().Set("Connection", "keep-alive")
-		flusher, ok := w.(http.Flusher)
-		if !ok {
-			http.Error(w, "Streaming not supported", 500)
-			return
-		}
+        // validateOllamaEndpoint ensures the endpoint is a loopback address to prevent SSRF.
+        validateOllamaEndpoint := func() bool {
+                u, err := url.Parse(cfg.OllamaEndpoint)
+                if err != nil {
+                        return false
+                }
+                return u.IsLoopback()
+        }
 
-		onStart(mission, func(status string) {
-			defer func() { recover() }() // Prevent panic if writer is closed
-			fmt.Fprintf(w, "data: %s\n\n", status)
-			flusher.Flush()
-		})
+        // Serve the main dashboard page
+        mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+                // Set CSRF cookie on page load
+                http.SetCookie(w, &http.Cookie{
+                        Name:     "ghost_csrf",
+                        Value:    csrfToken,
+                        Path:     "/",
+                        HttpOnly: false, // Needs to be readable by JS for double-submit
+                        SameSite: http.SameSiteStrictMode,
+                })
+                w.Header().Set("Content-Type", "text/html; charset=utf-8")
+                fmt.Fprintf(w, dashboardHTML, version, version, csrfToken, version)
+        })
 
-		fmt.Fprintf(w, "data: ✅ Misión completada.\n\n")
-		flusher.Flush()
-	}))
+        // Mission execution endpoint (streams Server-Sent Events)
+        mux.HandleFunc("/mission", csrfMiddleware(func(w http.ResponseWriter, r *http.Request) {
+                if r.Method != http.MethodPost {
+                        http.Error(w, "Method Not Allowed", 405)
+                        return
+                }
+                mission := r.FormValue("intent")
+                if mission == "" {
+                        http.Error(w, "No intent provided", 400)
+                        return
+                }
 
-	// Metrics endpoint for PhantomPulse
-	mux.HandleFunc("/api/metrics", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(lastMetrics)
-	})
+                w.Header().Set("Content-Type", "text/event-stream")
+                w.Header().Set("Cache-Control", "no-cache")
+                w.Header().Set("Connection", "keep-alive")
+                flusher, ok := w.(http.Flusher)
+                if !ok {
+                        http.Error(w, "Streaming not supported", 500)
+                        return
+                }
 
-	// Health endpoint for Ollama status
-	mux.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
-		client := http.Client{Timeout: 1 * time.Second}
-		resp, err := client.Get(cfg.OllamaEndpoint + "/api/version")
-		status := "ok"
-		var ollamaVersion string
-		if err != nil {
-			status = "error"
-		} else {
-			defer resp.Body.Close()
-			var versionResp struct {
-				Version string `json:"version"`
-			}
-			if json.NewDecoder(resp.Body).Decode(&versionResp) == nil && versionResp.Version != "" {
-				ollamaVersion = versionResp.Version
-			}
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{
-			"status":        status,
-			"model":         cfg.OllamaModel,
-			"ollama_version": ollamaVersion,
-			"grid_density":  cfg.GridDensity,
-		})
-	})
+                onStart(mission, func(status string) {
+                        defer func() {
+                                if r := recover(); r != nil {
+                                        fmt.Printf("Warning: panic in mission callback: %v\n", r)
+                                }
+                        }()
+                        fmt.Fprintf(w, "data: %s\n\n", status)
+                        flusher.Flush()
+                })
 
-	// Hardware profile endpoint for fallback mode indicator
-	mux.HandleFunc("/api/hardware", func(w http.ResponseWriter, r *http.Request) {
-		profile := core.DetectHardwareProfile()
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"is_weak":         profile.IsWeak,
-			"reason":          profile.Reason,
-			"total_ram":       profile.TotalRAMBytes,
-			"num_cpu":         profile.NumCPU,
-			"budget_ms":       cfg.FallbackBudgetMs,
-			"fallback_forced": cfg.HardwareFallback,
-		})
-	})
+                fmt.Fprintf(w, "data: ✅ Misión completada.\n\n")
+                flusher.Flush()
+        }))
 
-	// Toggle fallback mode on/off and persist to config
-	mux.HandleFunc("/api/fallback/toggle", csrfMiddleware(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "Method Not Allowed", 405)
-			return
-		}
-		cfg.HardwareFallback = !cfg.HardwareFallback
-		cfg.Save()
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"fallback_active": cfg.HardwareFallback,
-			"budget_ms":       cfg.FallbackBudgetMs,
-		})
-	}))
+        // Metrics endpoint for PhantomPulse
+        mux.HandleFunc("/api/metrics", func(w http.ResponseWriter, r *http.Request) {
+                cfgMu.RLock()
+                defer cfgMu.RUnlock()
+                writeJSON(w, lastMetrics)
+        })
 
-	// Resume mission after interruption
-	mux.HandleFunc("/api/resume", csrfMiddleware(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "Method Not Allowed", 405)
-			return
-		}
-		// Reset the machine's interruption state
-		m.ResetIntervention()
+        // Health endpoint for Ollama status
+        mux.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
+                cfgMu.RLock()
+                endpoint := cfg.OllamaEndpoint
+                model := cfg.OllamaModel
+                gridDensity := cfg.GridDensity
+                cfgMu.RUnlock()
 
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "resumed"})
-	}))
+                // SSRF protection: only allow loopback addresses
+                u, err := url.Parse(endpoint)
+                if err != nil || !u.IsLoopback() {
+                        writeJSON(w, map[string]string{"status": "error", "model": model, "grid_density": gridDensity})
+                        return
+                }
 
-	// Find a free port
-	listener, err := net.Listen("tcp", "127.0.0.1:7474")
-	if err != nil {
-		listener, err = net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			fmt.Println("❌ Cannot start UI server:", err)
-			return
-		}
-	}
+                client := http.Client{Timeout: 1 * time.Second}
+                resp, err := client.Get(endpoint + "/api/version")
+                status := "ok"
+                var ollamaVersion string
+                if err != nil {
+                        status = "error"
+                } else {
+                        defer resp.Body.Close()
+                        var versionResp struct {
+                                Version string `json:"version"`
+                        }
+                        if json.NewDecoder(resp.Body).Decode(&versionResp) == nil && versionResp.Version != "" {
+                                ollamaVersion = versionResp.Version
+                        }
+                }
+                writeJSON(w, map[string]string{"status": status, "model": model, "ollama_version": ollamaVersion, "grid_density": gridDensity})
+        })
 
-	addr := "http://" + listener.Addr().String()
-	fmt.Printf("\033[1;32m[UI]\033[0m Ghost Mode UI → %s\n", addr)
+        // Hardware profile endpoint for fallback mode indicator
+        mux.HandleFunc("/api/hardware", func(w http.ResponseWriter, r *http.Request) {
+                cfgMu.RLock()
+                defer cfgMu.RUnlock()
+                profile := core.DetectHardwareProfile()
+                writeJSON(w, map[string]interface{}{"is_weak": profile.IsWeak, "reason": profile.Reason, "total_ram": profile.TotalRAMBytes, "num_cpu": profile.NumCPU, "budget_ms": cfg.FallbackBudgetMs, "fallback_forced": cfg.HardwareFallback})
+        })
 
-	// Open browser after a short delay
-	go func() {
-		time.Sleep(500 * time.Millisecond)
-		var cmd *exec.Cmd
-		switch runtime.GOOS {
-		case "windows":
-			cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", addr)
-		case "darwin":
-			cmd = exec.Command("open", addr)
-		default: // linux
-			cmd = exec.Command("xdg-open", addr)
-		}
-		if cmd != nil {
-			cmd.Start()
-		}
-	}()
+        // Toggle fallback mode on/off and persist to config
+        mux.HandleFunc("/api/fallback/toggle", csrfMiddleware(func(w http.ResponseWriter, r *http.Request) {
+                if r.Method != http.MethodPost {
+                        http.Error(w, "Method Not Allowed", 405)
+                        return
+                }
+                cfgMu.Lock()
+                cfg.HardwareFallback = !cfg.HardwareFallback
+                cfgMu.Unlock()
+                if err := cfg.Save(); err != nil {
+                        http.Error(w, fmt.Sprintf("Failed to save config: %v", err), 500)
+                        return
+                }
+                writeJSON(w, map[string]interface{}{"fallback_active": cfg.HardwareFallback, "budget_ms": cfg.FallbackBudgetMs})
+        }))
 
-	// Graceful shutdown with signal handling
-	srv := &http.Server{Handler: mux}
-	go func() {
-		if err := srv.Serve(listener); err != nil && err != http.ErrServerClosed {
-			fmt.Println("❌ UI server error:", err)
-		}
-	}()
+        // Resume mission after interruption
+        mux.HandleFunc("/api/resume", csrfMiddleware(func(w http.ResponseWriter, r *http.Request) {
+                if r.Method != http.MethodPost {
+                        http.Error(w, "Method Not Allowed", 405)
+                        return
+                }
+                // Reset the machine's interruption state
+                m.ResetIntervention()
 
-	// Wait for interrupt signal
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
+                w.Header().Set("Content-Type", "application/json")
+                json.NewEncoder(w).Encode(map[string]string{"status": "resumed"})
+        }))
 
-	fmt.Println("\n\033[1;33m[UI]\033[0m Shutting down gracefully...")
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := srv.Shutdown(ctx); err != nil {
-		fmt.Println("❌ UI server forced shutdown:", err)
-	}
-	fmt.Println("\033[1;32m[UI]\033[0m Server stopped.")
+        // Find a free port
+        listener, err := net.Listen("tcp", "127.0.0.1:7474")
+        if err != nil {
+                listener, err = net.Listen("tcp", "127.0.0.1:0")
+                if err != nil {
+                        fmt.Println("❌ Cannot start UI server:", err)
+                        return
+                }
+        }
+
+        addr := "http://" + listener.Addr().String()
+        fmt.Printf("\033[1;32m[UI]\033[0m Ghost Mode UI → %s\n", addr)
+
+        // Open browser after a short delay
+        go func() {
+                time.Sleep(500 * time.Millisecond)
+                var cmd *exec.Cmd
+                switch runtime.GOOS {
+                case "windows":
+                        cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", addr)
+                case "darwin":
+                        cmd = exec.Command("open", addr)
+                default: // linux
+                        cmd = exec.Command("xdg-open", addr)
+                }
+                if cmd != nil {
+                        cmd.Start()
+                }
+        }()
+
+        // Graceful shutdown with signal handling
+        srv := &http.Server{Handler: mux}
+        go func() {
+                if err := srv.Serve(listener); err != nil && err != http.ErrServerClosed {
+                        fmt.Println("❌ UI server error:", err)
+                }
+        }()
+
+        // Wait for interrupt signal
+        quit := make(chan os.Signal, 1)
+        signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+        <-quit
+
+        fmt.Println("\n\033[1;33m[UI]\033[0m Shutting down gracefully...")
+        ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+        defer cancel()
+        if err := srv.Shutdown(ctx); err != nil {
+                fmt.Println("❌ UI server forced shutdown:", err)
+        }
+        fmt.Println("\033[1;32m[UI]\033[0m Server stopped.")
 }
 
 const dashboardHTML = `<!DOCTYPE html>

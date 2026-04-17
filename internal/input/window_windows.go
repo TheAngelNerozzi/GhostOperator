@@ -19,7 +19,10 @@ var (
 
 // SetDPIAware enables DPI awareness for the current process.
 func SetDPIAware() {
-	procSetProcessDPIAware.Call()
+	ret, _, err := procSetProcessDPIAware.Call()
+	if ret == 0 {
+		fmt.Printf("Warning: SetProcessDPIAware failed: %v\n", err)
+	}
 }
 
 // WindowInfo contains information about an active window.
@@ -35,9 +38,12 @@ func GetActiveWindowInfo() (WindowInfo, error) {
 		return WindowInfo{}, fmt.Errorf("no foreground window found")
 	}
 
-	// Get Title
-	b := make([]uint16, 200)
-	_, _, _ = procGetWindowTextW.Call(hwnd, uintptr(unsafe.Pointer(&b[0])), uintptr(len(b)))
+	// Get Title (buffer increased to 512 for long titles)
+	b := make([]uint16, 512)
+	ret, _, err := procGetWindowTextW.Call(hwnd, uintptr(unsafe.Pointer(&b[0])), uintptr(len(b)))
+	if ret == 0 {
+		return WindowInfo{}, fmt.Errorf("GetWindowTextW failed: %v", err)
+	}
 	title := syscall.UTF16ToString(b)
 
 	// Get PID

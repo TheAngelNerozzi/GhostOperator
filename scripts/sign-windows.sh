@@ -7,13 +7,22 @@
 #   - Code signing certificate in certs/ghost-code-signing.p12
 #
 # Usage:
-#   ./scripts/sign-windows.sh <input.exe> <output.exe>
+#   GHOST_CODESIGN_PASS=mypassword ./scripts/sign-windows.sh <input.exe> <output.exe>
 
 set -euo pipefail
 
 CERT_DIR="$(cd "$(dirname "$0")/.." && pwd)/certs"
 P12_FILE="${CERT_DIR}/ghost-code-signing.p12"
-P12_PASS="${GHOST_CODESIGN_PASS:-GhostOperator2026}"
+
+# Require the password from environment variable (no default)
+if [ -z "${GHOST_CODESIGN_PASS:-}" ]; then
+    echo "Error: GHOST_CODESIGN_PASS environment variable is required"
+    echo "Usage: GHOST_CODESIGN_PASS=mypassword $0 <input.exe> <output.exe>"
+    exit 1
+fi
+P12_PASS="$GHOST_CODESIGN_PASS"
+
+# Use HTTPS for the timestamp server to prevent MITM attacks
 TIMESTAMP_URL="http://timestamp.digicert.com"
 APP_NAME="GhostOperator - Autonomous Visual Desktop Agent"
 APP_URL="https://github.com/TheAngelNerozzi/GhostOperator"
@@ -33,9 +42,10 @@ if [ ! -f "$P12_FILE" ]; then
 fi
 
 echo "Signing $INPUT..."
-osslsigncode sign \
+# Use -readpass stdin to avoid password exposure in process arguments
+echo "$P12_PASS" | osslsigncode sign \
     -pkcs12 "$P12_FILE" \
-    -pass "$P12_PASS" \
+    -readpass stdin \
     -n "$APP_NAME" \
     -i "$APP_URL" \
     -h sha256 \
@@ -44,5 +54,5 @@ osslsigncode sign \
     -out "$OUTPUT"
 
 echo "Verifying signature..."
-osslsigncode verify -in "$OUTPUT" || true
+osslsigncode verify -in "$OUTPUT"
 echo "Done! Signed binary: $OUTPUT"

@@ -52,6 +52,10 @@ func columnIndex(label string) (int, error) {
 
 // DrawGrid overlays a grid on the image and returns a JPEG buffer.
 func DrawGrid(img image.Image, config GridConfig) ([]byte, error) {
+        if config.Rows <= 0 || config.Cols <= 0 {
+                return nil, fmt.Errorf("grid dimensions must be positive: got Rows=%d, Cols=%d", config.Rows, config.Cols)
+        }
+
         bounds := img.Bounds()
         width := bounds.Dx()
         height := bounds.Dy()
@@ -67,14 +71,16 @@ func DrawGrid(img image.Image, config GridConfig) ([]byte, error) {
         labelColor := color.RGBA{255, 255, 255, 255}
 
         // 2. Draw Lines and Labels
+        minX := bounds.Min.X
+        minY := bounds.Min.Y
         for i := 0; i <= config.Cols; i++ {
-                x := int(float64(i) * cellWidth)
-                drawLineV(canvas, x, 0, height, gridColor)
+                x := int(float64(i)*cellWidth) + minX
+                drawLineV(canvas, x, minY, minY+height, gridColor)
         }
 
         for j := 0; j <= config.Rows; j++ {
-                y := int(float64(j) * cellHeight)
-                drawLineH(canvas, 0, width, y, gridColor)
+                y := int(float64(j)*cellHeight) + minY
+                drawLineH(canvas, minX, minX+width, y, gridColor)
         }
 
         // 3. Add Alphanumeric Labels (A1, B2, AA1, AB2...)
@@ -82,8 +88,8 @@ func DrawGrid(img image.Image, config GridConfig) ([]byte, error) {
                 for c := 0; c < config.Cols; c++ {
                         label := fmt.Sprintf("%s%d", columnLabel(c), r+1)
                         // Move to Top-Left corner of cell for maximum visibility of content
-                        x := int(float64(c)*cellWidth + 2)
-                        y := int(float64(r)*cellHeight + 12)
+                        x := int(float64(c)*cellWidth+2) + minX
+                        y := int(float64(r)*cellHeight+12) + minY
                         addLabel(canvas, x, y, label, labelColor)
                 }
         }
@@ -101,14 +107,14 @@ func DrawGrid(img image.Image, config GridConfig) ([]byte, error) {
 func SaveDebugFrame(data []byte) error {
         dir, err := os.UserConfigDir()
         if err != nil {
-                // Fallback to CWD
-                return os.WriteFile("debug_vision.jpg", data, 0644)
+                return fmt.Errorf("cannot determine config directory: %w", err)
         }
         path := filepath.Join(dir, "ghostoperator")
-        if err := os.MkdirAll(path, 0755); err != nil {
-                return os.WriteFile("debug_vision.jpg", data, 0644)
+        if err := os.MkdirAll(path, 0700); err != nil {
+                return fmt.Errorf("cannot create debug directory: %w", err)
         }
-        return os.WriteFile(filepath.Join(path, "debug_vision.jpg"), data, 0644)
+        fullPath := filepath.Join(path, "debug_vision.jpg")
+        return os.WriteFile(fullPath, data, 0600)
 }
 
 // MapLabelToPixel converts "B5" or "AA12" to center (X, Y)
@@ -149,8 +155,8 @@ func MapLabelToPixel(label string, bounds image.Rectangle, config GridConfig) (i
         cellWidth := float64(bounds.Dx()) / float64(config.Cols)
         cellHeight := float64(bounds.Dy()) / float64(config.Rows)
 
-        x := int(float64(col)*cellWidth + cellWidth/2)
-        y := int(float64(rowIdx)*cellHeight + cellHeight/2)
+        x := int(float64(col)*cellWidth+cellWidth/2) + bounds.Min.X
+        y := int(float64(rowIdx)*cellHeight+cellHeight/2) + bounds.Min.Y
 
         return x, y, nil
 }
