@@ -49,8 +49,9 @@ func getTotalRAM() (uint64, error) {
         if len(val) < 8 {
                 return 0, fmt.Errorf("hw.memsize returned insufficient data")
         }
-        // The Sysctl call for hw.memsize returns the value as a little-endian uint64
-        result := binary.LittleEndian.Uint64(val)
+        // The Sysctl call for hw.memsize returns the value as a little-endian uint64.
+        // In Go 1.26+, syscall.Sysctl returns a string, so we must cast to []byte.
+        result := binary.LittleEndian.Uint64([]byte(val))
         return result, nil
 }
 
