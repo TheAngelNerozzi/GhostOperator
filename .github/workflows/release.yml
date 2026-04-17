@@ -28,6 +28,60 @@ jobs:
       - name: Build Binary
         run: go build -ldflags "-s -w" -o ghost-windows-amd64.exe ./cmd/ghost
 
+      - name: Sign Binary (Code Signing)
+        shell: pwsh
+        run: |
+          Write-Host "[SIGN] Creating self-signed code signing certificate..." -ForegroundColor Cyan
+
+          # Create self-signed code signing certificate
+          $cert = New-SelfSignedCertificate `
+              -Type CodeSigningCert `
+              -Subject "CN=Angel Nerozzi, O=Angel Nerozzi, C=VE" `
+              -HashAlgorithm SHA256 `
+              -KeyAlgorithm RSA `
+              -KeyLength 4096 `
+              -CertStoreLocation "Cert:\CurrentUser\My" `
+              -NotAfter (Get-Date).AddYears(3) `
+              -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3","2.5.29.19={text}")
+
+          Write-Host "  Thumbprint: $($cert.Thumbprint)" -ForegroundColor Gray
+
+          # Export to PFX
+          $pfxPath = Join-Path $env:TEMP "ghost-sign.pfx"
+          $pfxPass = "ghostoperator2026sign"
+          $secPass = ConvertTo-SecureString -String $pfxPass -Force -AsPlainText
+          Export-PfxCertificate -Cert $cert -FilePath $pfxPath -Password $secPass | Out-Null
+
+          # Find signtool
+          $signtool = Get-ChildItem -Path "${env:ProgramFiles(x86)}\Windows Kits" -Recurse -Filter "signtool.exe" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $signtool) {
+              Write-Host "  ERROR: signtool.exe not found" -ForegroundColor Red
+              exit 1
+          }
+
+          Write-Host "  signtool: $signtool" -ForegroundColor Gray
+
+          # Sign with SHA256 + timestamp
+          & $signtool sign `
+              /f $pfxPath `
+              /p $pfxPass `
+              /tr "http://timestamp.digicert.com" `
+              /td SHA256 `
+              /fd SHA256 `
+              /c "CN=Angel Nerozzi" `
+              ghost-windows-amd64.exe
+
+          if ($LASTEXITCODE -ne 0) {
+              Write-Host "  Signing failed!" -ForegroundColor Red
+              exit 1
+          }
+
+          # Verify
+          & $signtool verify /pa /all ghost-windows-amd64.exe
+          Write-Host "  Signed and verified successfully!" -ForegroundColor Green
+
+          Remove-Item $pfxPath -Force -ErrorAction SilentlyContinue
+
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -130,36 +184,30 @@ jobs:
           {
             echo "## What's New in ${TAG}"
             echo ""
-            echo "### Security"
-            echo "- Hardened LLM/Ollama client with context timeouts, TLS config, and input sanitization"
-            echo "- Fixed race conditions in phantom_pulse and health check subsystems"
-            echo "- Added input validation in executor, automation safety, and config parsing"
-            echo "- Secured vision/screen capture with bounds checking and resource cleanup"
-            echo "- Patched machine abstraction layers with proper error handling"
-            echo "- Improved Windows input/hotkey handlers with mutex synchronization"
-            echo "- Hardened install scripts against command injection and path traversal"
-            echo "- Added timeout contexts to bootstrap and dashboard HTTP handlers"
+            echo "### Security Hardening (v1.3.0+)"
+            echo "- SSRF protection hardened with net.IP.IsLoopback() + DNS resolution"
+            echo "- Prompt injection prevention via proper quote/backslash escaping"
+            echo "- Mission concurrency control with atomic semaphore"
+            echo "- HTTP server timeouts (Read/Write/Idle) to prevent Slow Lorris DoS"
+            echo "- Body size limit (1MB) on mission endpoint"
+            echo "- Cancellable context with signal handler for graceful Ctrl+C"
+            echo "- GridDensity upper bound validation (max 50x50)"
             echo ""
-            echo "### UI Redesign"
+            echo "### Code Signing (v1.3.1)"
+            echo "- Windows binary signed with SHA256 code signing certificate"
+            echo "- Timestamped via DigiCert to ensure signature validity"
+            echo "- Proper version metadata embedded (Company, Product, Copyright)"
+            echo "- Windows 10/11 compatibility manifest with DPI awareness"
+            echo ""
+            echo "### UI Redesign (v1.2.0)"
             echo "- Complete minimalist monochrome dark theme (Zinc palette)"
-            echo "- New Inter + JetBrains Mono typography system"
-            echo "- Compact header with language selector and health badge"
-            echo "- Redesigned sidebar: Engine, Vision System, System info cards"
-            echo "- Terminal-style console with subtle log entries"
-            echo ""
-            echo "### i18n — Multilanguage Support"
-            echo "- Full translations: English, Spanish, French, Chinese"
-            echo "- Language preference persisted in localStorage"
-            echo "- Auto-detected platform display"
-            echo ""
-            echo "### Cross-Platform Builds"
-            echo "- Windows AMD64, Linux AMD64, macOS AMD64, macOS ARM64"
-            echo "- CI workflow rewritten for multi-platform release automation"
+            echo "- Inter + JetBrains Mono typography system"
+            echo "- Full i18n: English, Spanish, French, Chinese"
             echo ""
             echo "### Downloads"
             echo "| Platform | File |"
             echo "|----------|------|"
-            echo "| Windows | ghost-windows-amd64.exe |"
+            echo "| Windows | ghost-windows-amd64.exe (Signed) |"
             echo "| Linux | ghost-linux-amd64 |"
             echo "| macOS (Intel) | ghost-darwin-amd64 |"
             echo "| macOS (Apple Silicon) | ghost-darwin-arm64 |"
